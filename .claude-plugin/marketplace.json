@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "AgentLib Marketplace",
+  "description": "Agentic Knowledge Navigation System",
+  "owner": {
+    "name": "Nadav Barkain",
+    "email": "barkai.nadav@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "agentlib",
+      "description": "Agentic Knowledge Navigation System — efficient AI navigation of books via structured metadata layers. 47% fewer tokens vs raw PDF.",
+      "source": ".",
+      "category": "productivity",
+      "author": {
+        "name": "Nadav Barkain"
+      },
+      "homepage": "https://github.com/barkain/agentlib"
+    }
+  ]
+}
