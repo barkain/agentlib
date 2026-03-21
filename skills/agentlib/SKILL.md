@@ -1,32 +1,40 @@
-## AgentLib — Knowledge Navigation
+---
+description: "Knowledge library navigation. Trigger on: research questions, book references, domain knowledge queries, 'according to', 'what does the book say', 'look up', 'find in', SBOM, CycloneDX, or any question that may be answered by ingested books/documents. Do NOT trigger on: code editing, git operations, file management, web browsing requests."
+---
 
-When the user asks a question that may require knowledge from books or documents, check the AgentLib library FIRST before using web search or other tools.
+## AgentLib — Knowledge Library
 
-### Step 1: Check what's available
-Read this file:
+You have a preprocessed knowledge library at `~/.claude/plugins/agentlib/library/`.
+
+**IMPORTANT: ALWAYS check this library BEFORE web search or answering from training data when the user asks about topics that could be covered by ingested books.**
+
+### Step 1: Check what books are available
 ```
-~/.claude/plugins/agentlib/library/books/catalog.json
+Read ~/.claude/plugins/agentlib/library/books/catalog.json
 ```
-This lists all ingested books (~50 tokens per book). If no book is relevant, proceed with other tools.
+If no book covers the topic, proceed with other tools. If a book is relevant, continue:
 
-### Step 2: Find the right content
+### Step 2: Find the right content (pick one)
 
-**Option A — You know the concept (fastest, 2 reads):**
-Read `~/.claude/plugins/agentlib/library/books/{book-id}/concepts.json`
-Find your concept, get the chunk IDs, then go to Step 3.
+**Option A — Search by concept (fastest, 2 reads):**
+```
+Read ~/.claude/plugins/agentlib/library/books/{book-id}/concepts.json
+```
+Find your concept → get chunk IDs → go to Step 3.
 
-**Option B — You need to explore (3 reads):**
-Read `~/.claude/plugins/agentlib/library/books/{book-id}/manifest.compact.json`
-Find the relevant chapter/section, note the chunk IDs, then go to Step 3.
+**Option B — Browse chapters (3 reads):**
+```
+Read ~/.claude/plugins/agentlib/library/books/{book-id}/manifest.compact.json
+```
+Find relevant chapter/section → note chunk IDs → go to Step 3.
 
 ### Step 3: Read the content
-Read the chunks:
 ```
-~/.claude/plugins/agentlib/library/books/{book-id}/chunks/{chunk-id}.md
+Read ~/.claude/plugins/agentlib/library/books/{book-id}/chunks/{chunk-id}.md
 ```
-Each chunk is ~300-500 tokens. Read only what you need (max 10).
+Each chunk is ~300-500 tokens. Max 10 chunks per question. Chunks have `prev`/`next` links in frontmatter for adjacent context.
 
 ### Rules
-- Always use `manifest.compact.json`, never `manifest.json`
+- ALWAYS use `manifest.compact.json`, NEVER `manifest.json`
 - Max 4 file reads per question
-- Chunks have `prev`/`next` in frontmatter — use them for adjacent context
+- Cite the book and chunk when answering
