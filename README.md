@@ -18,22 +18,30 @@ L2  "Give me the content" →  small self-contained chunks, 300-500 tok  (expens
 
 Plus a **concept search** shortcut (Ls) that jumps directly to relevant chunks when the agent already knows what it's looking for.
 
-### Example: "What refresh token strategy does OWASP recommend?"
+## Real-World Example
 
-**Without AgentLib** (blind file reading):
-1. List files — find 15 books
-2. Read OWASP table of contents (raw PDF)
-3. Guess pages 130-140 — wrong section
-4. Read pages 140-150 — still wrong
-5. Read pages 150-155 — finally found it
+**Question:** "What are the maturity levels for SBOM according to the CycloneDX standard?"
+**Source:** *Authoritative Guide to SBOM* (CycloneDX standard, 20 chapters, 98 chunks)
 
-**5 calls, 25,900 cumulative input tokens, 1 wrong read.**
+### AgentLib vs raw PDF
 
-**With AgentLib:**
-1. `search_concepts("token rotation")` — returns matching chunk IDs
-2. `read_chunks(["ch07-042", "ch07-043"])` — reads exactly what's needed
+| Metric | AgentLib | Raw PDF | Reduction |
+|--------|----------|---------|-----------|
+| Content tokens (messages) | 7.8k | 14.7k | **47%** |
+| Total context | 24k | 30k | **20%** |
+| Answer quality | Correct (5 dimensions table) | Correct (5 dimensions table) | Same |
 
-**2 calls, 4,540 cumulative input tokens, 0 wrong reads.**
+### How AgentLib navigated (3 calls)
+
+1. `search_concepts("SBOM maturity levels")` — found "SCVS BOM Maturity Model"
+2. `open_book("authoritativeguide-to-sbom")` — compact manifest (~1.8k tokens)
+3. `read_chunks(["ch10-s03-001", "ch10-s04-001"])` — exact content (~700 tokens)
+
+### How raw PDF was read
+
+Claude Code read the entire 400-page PDF and scanned for the answer — 14.7k content tokens, no structure, no way to skip irrelevant pages.
+
+> **Note:** In this test, concept search was not fully functional, so the agent fell back to the `open_book` -> `read_chunks` path (3 calls). With working concept search, the optimal path is `search_concepts` -> `read_chunks` (2 calls, ~3-4k content tokens, ~75% reduction).
 
 ## Cost simulations
 
@@ -82,6 +90,20 @@ The agent discovers and uses AgentLib tools automatically:
 | `open_book` | L1 | Get chapter structure, summaries, key concepts |
 | `read_chunks` | L2 | Read specific content chunks (max 10/call) |
 | `search_concepts` | Ls | Find concepts across the library |
+
+## LLM Providers
+
+AgentLib supports 5 LLM providers for ingestion and summarization (auto-detected from environment):
+
+| Provider | Model | Env var |
+|----------|-------|---------|
+| Anthropic | Claude Haiku 4.5 | `ANTHROPIC_API_KEY` |
+| OpenAI | GPT-4o Mini | `OPENAI_API_KEY` |
+| xAI | Grok-3 Mini | `XAI_API_KEY` |
+| Google | Gemini 2.0 Flash | `GOOGLE_API_KEY` |
+| DeepSeek | DeepSeek Chat | `DEEPSEEK_API_KEY` |
+
+Set `AGENTLIB_PROVIDER` to override auto-detection.
 
 ## Development
 
