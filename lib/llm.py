@@ -72,6 +72,9 @@ def detect_provider() -> LLMConfig:
     # Auto-detect by checking API keys in preference order
     for name, p in PROVIDERS.items():
         api_key = os.environ.get(p["env_key"])
+        # For Anthropic, also accept CLAUDE_CODE_OAUTH_TOKEN (Claude Code env)
+        if not api_key and name == "anthropic":
+            api_key = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
         if api_key:
             return LLMConfig(
                 provider=name,
@@ -100,7 +103,7 @@ def call_llm(config: LLMConfig, prompt: str, max_tokens: int = 1024) -> str:
 
 def _call_anthropic(config: LLMConfig, prompt: str, max_tokens: int) -> str:
     """Call Anthropic API via their SDK."""
-    import anthropic
+    import anthropic  # type: ignore[import-untyped]
 
     client = anthropic.Anthropic(api_key=config.api_key)
     response = client.messages.create(
@@ -113,7 +116,7 @@ def _call_anthropic(config: LLMConfig, prompt: str, max_tokens: int) -> str:
 
 def _call_openai_compat(config: LLMConfig, prompt: str, max_tokens: int) -> str:
     """Call OpenAI-compatible API (works for OpenAI, xAI, Google, DeepSeek)."""
-    from openai import OpenAI
+    from openai import OpenAI  # type: ignore[import-untyped]
 
     client = OpenAI(api_key=config.api_key, base_url=config.base_url)
     response = client.chat.completions.create(

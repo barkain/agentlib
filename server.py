@@ -60,7 +60,32 @@ def open_book(book_id: str) -> str:
     manifest = storage.read_manifest(book_id)
     if manifest is None:
         return json.dumps({"error": f"Manifest not found for book: {book_id}"})
-    return manifest.to_json()
+    # Return a compact manifest (~500 tokens) instead of the full dump.
+    # Summaries are truncated; section details reduced to id + chunk count.
+    _MAX_SUMMARY = 120
+
+    def _trunc(text: str) -> str:
+        return text[:_MAX_SUMMARY].rsplit(" ", 1)[0] + "..." if len(text) > _MAX_SUMMARY else text
+
+    compact: dict = {"book_id": manifest.book_id}
+    compact["chapters"] = [
+        {
+            "id": ch.id,
+            "title": ch.title,
+            "summary": _trunc(ch.summary),
+            "key_concepts": ch.key_concepts,
+            "sections": [
+                {"id": s.id, "title": s.title, "num_chunks": len(s.chunk_ids)}
+                for s in ch.sections
+            ],
+        }
+        for ch in manifest.chapters
+    ]
+    compact["concept_index"] = {
+        concept: [cid for entry in entries for cid in entry.chunks]
+        for concept, entries in manifest.concept_index.items()
+    }
+    return json.dumps(compact)
 
 
 @mcp.tool()

@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
+
+logger = logging.getLogger("agentlib.summariser")
 
 from lib.llm import LLMConfig, call_llm, detect_provider
 
@@ -40,6 +43,41 @@ def _get_config(llm_config: LLMConfig | None) -> LLMConfig:
     if llm_config is not None:
         return llm_config
     return detect_provider()
+
+
+def _extract_json(text: str) -> str:
+    """Extract and clean JSON from an LLM response.
+
+    Handles markdown code blocks and trailing commas.
+    """
+    # Strip markdown code fences
+    if text.startswith("```"):
+        lines = text.split("\n")
+        text = "\n".join(lines[1:-1])
+
+    # Remove trailing commas before } or ] (common LLM mistake)
+    import re
+
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+    return text
+
+
+def _parse_json(text: str) -> dict:
+    """Parse JSON from LLM output with best-effort repair."""
+    cleaned = _extract_json(text)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        # Try to find the outermost JSON object
+        start = cleaned.find("{")
+        end = cleaned.rfind("}") + 1
+        if start >= 0 and end > start:
+            try:
+                return json.loads(cleaned[start:end])
+            except json.JSONDecodeError:
+                pass
+        logger.warning("Failed to parse LLM JSON, returning empty dict")
+        return {}
 
 
 def summarise_chapter(
@@ -89,12 +127,7 @@ Respond with ONLY valid JSON in this exact format:
 Key concepts should be specific, searchable terms (3-5 per chapter). Section summaries should be concise (1 sentence each)."""
 
     result_text = call_llm(config, prompt, max_tokens=1024)
-    # Extract JSON from response (handle markdown code blocks)
-    if result_text.startswith("```"):
-        lines = result_text.split("\n")
-        result_text = "\n".join(lines[1:-1])
-
-    data = json.loads(result_text)
+    data = _parse_json(result_text)
 
     section_summaries = []
     for sec_data in data.get("section_summaries", []):
@@ -163,11 +196,7 @@ Respond with ONLY valid JSON in this exact format:
 Include 20-50 concepts. Use specific, searchable terms. Merge similar concepts."""
 
     result_text = call_llm(config, prompt, max_tokens=4096)
-    if result_text.startswith("```"):
-        lines = result_text.split("\n")
-        result_text = "\n".join(lines[1:-1])
-
-    data = json.loads(result_text)
+    data = _parse_json(result_text)
 
     concept_index: dict[str, list[ConceptMapping]] = {}
     for concept, entries in data.items():

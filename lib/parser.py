@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html.parser
 import re
+from collections import Counter
 from pathlib import Path
 
 from lib.models import ParsedSection
@@ -19,6 +20,45 @@ def parse_pdf(path: Path) -> list[ParsedSection]:
     doc = fitz.open(str(path))
     sections: list[ParsedSection] = []
 
+    # --- Detect font sizes for heading classification ---
+    size_counter: Counter[float] = Counter()
+    for pn in range(len(doc)):
+        page_dict = doc[pn].get_text("dict")
+        for blk in page_dict.get("blocks", []):
+            if blk.get("type") != 0:
+                continue
+            for ln in blk.get("lines", []):
+                for span in ln.get("spans", []):
+                    txt = span["text"].strip()
+                    if txt and len(txt) > 3:
+                        size = round(span["size"], 1)
+                        size_counter[size] += len(txt)
+
+    if size_counter:
+        body_size = size_counter.most_common(1)[0][0]
+        # Pick the two most-used font sizes larger than body text.
+        # Sort by character count descending so that the real heading
+        # sizes (used many times) win over rare cover-page sizes.
+        heading_sizes = sorted(
+            [(s, size_counter[s]) for s in size_counter if s > body_size + 0.5],
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        if len(heading_sizes) >= 2:
+            # Two most-used heading sizes; smaller = section, larger = chapter
+            top_two = sorted([heading_sizes[0][0], heading_sizes[1][0]])
+            section_thresh = top_two[0]
+            chapter_thresh = top_two[1]
+        elif len(heading_sizes) == 1:
+            section_thresh = heading_sizes[0][0]
+            chapter_thresh = heading_sizes[0][0]
+        else:
+            section_thresh = body_size + 2.0
+            chapter_thresh = body_size + 4.0
+    else:
+        body_size, section_thresh, chapter_thresh = 10.0, 12.0, 14.0
+
+    # --- State for section accumulation ---
     current_chapter_num = 1
     current_section_num = 1
     current_chapter_title = "Introduction"
@@ -46,11 +86,13 @@ def parse_pdf(path: Path) -> list[ParsedSection]:
         current_page_start = None
         current_page_end = None
 
-    def _is_heading(block_text: str, block_dict: dict | None = None) -> tuple[bool, str]:
-        """Heuristic heading detection. Returns (is_heading, level: 'chapter'|'section')."""
+    def _is_heading(block_text: str, font_size: float = 0.0) -> tuple[bool, str]:
+        """Heuristic heading detection. Returns (is_heading, level)."""
         line = block_text.strip()
         if not line or len(line) > 100:
             return False, ""
+
+        # --- Text-pattern-based detection ---
 
         # Chapter patterns
         if re.match(r"^(Chapter|CHAPTER)\s+\d+", line):
@@ -58,19 +100,42 @@ def parse_pdf(path: Path) -> list[ParsedSection]:
         if re.match(r"^(Part|PART)\s+[IVXLCDM\d]+", line):
             return True, "chapter"
 
-        # Section patterns: numbered headings like "1.1 Title" or "1.1.1 Title"
+        # Top-level numbered headings like "1 Title" (LaTeX \section)
+        if (
+            re.match(r"^\d+\s+[A-Z]\S", line)
+            and not re.match(r"^\d+\.\d+", line)
+            and len(line) < 80
+        ):
+            return True, "chapter"
+
+        # Sub-section patterns: "1.1 Title" or "1.1.1 Title"
         if re.match(r"^\d+(\.\d+)+\s+\S", line) and len(line) < 80:
             return True, "section"
 
-        # ALL CAPS short lines (likely headings)
+        # ALL CAPS short lines (likely headings) with at least 2 words
         if line.isupper() and len(line) < 60 and len(line.split()) >= 2:
             return True, "section"
 
+        # --- Font-size-based detection ---
+        if font_size > 0 and len(line) < 80:
+            if font_size >= chapter_thresh and chapter_thresh > section_thresh:
+                return True, "chapter"
+            if font_size >= section_thresh and font_size > body_size + 0.5:
+                return True, "section"
+
         return False, ""
+
+    # --- Main loop over pages and blocks ---
+    page_dict_cache: dict[int, dict] = {}
 
     for page_num in range(len(doc)):
         page = doc[page_num]
         blocks = page.get_text("blocks")
+
+        # Get dict representation for font-size lookup
+        if page_num not in page_dict_cache:
+            page_dict_cache[page_num] = page.get_text("dict")
+        pg_dict = page_dict_cache[page_num]
 
         for block in blocks:
             if block[6] != 0:  # Skip image blocks
@@ -79,7 +144,22 @@ def parse_pdf(path: Path) -> list[ParsedSection]:
             if not text:
                 continue
 
-            is_heading, level = _is_heading(text)
+            # Determine font size of this block via bbox matching
+            _x0, by0, _x1, by1 = block[:4]
+            font_size = 0.0
+            for dict_block in pg_dict.get("blocks", []):
+                if dict_block.get("type") != 0:
+                    continue
+                db = dict_block["bbox"]
+                if abs(db[1] - by0) < 2 and abs(db[3] - by1) < 2:
+                    for ln in dict_block.get("lines", []):
+                        for span in ln.get("spans", []):
+                            if span["text"].strip():
+                                font_size = max(font_size, span["size"])
+                    break
+            font_size = round(font_size, 1)
+
+            is_heading, level = _is_heading(text, font_size)
 
             if is_heading and level == "chapter":
                 _flush_section()
@@ -108,8 +188,8 @@ def parse_pdf(path: Path) -> list[ParsedSection]:
     if not sections:
         full_text = "\n".join(
             block[4].strip()
-            for page_num in range(len(doc))
-            for block in doc[page_num].get_text("blocks")
+            for pn in range(len(doc))
+            for block in doc[pn].get_text("blocks")
             if block[6] == 0 and block[4].strip()
         )
         if full_text:
