@@ -1,6 +1,40 @@
 """Book ingestion pipeline: Parse -> Chunk -> Summarise -> Index -> Serialise."""
 from __future__ import annotations
 
+import os
+from pathlib import Path as _Path
+
+
+def _load_env() -> None:
+    """Load .env file from plugin data directory. Shell env takes precedence."""
+    candidates = [
+        os.environ.get("CLAUDE_PLUGIN_DATA", ""),
+        os.environ.get("AGENTLIB_DATA", ""),
+    ]
+    for base in candidates:
+        if not base:
+            continue
+        env_path = _Path(base) / ".env"
+        if env_path.exists():
+            try:
+                env_path.chmod(0o600)
+                for line in env_path.read_text().splitlines():
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        key, _, value = line.partition("=")
+                        key = key.strip()
+                        value = value.strip()
+                        if key and os.environ.get(key) is None:
+                            os.environ[key] = value
+            except OSError:
+                pass
+            return
+
+
+_load_env()
+
 import argparse
 import logging
 import re

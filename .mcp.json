@@ -4,7 +4,8 @@
       "command": "uv",
       "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "server.py"],
       "env": {
-        "AGENTLIB_DATA": "${CLAUDE_PLUGIN_DATA}/library"
+        "AGENTLIB_DATA": "${CLAUDE_PLUGIN_DATA}/library",
+        "CLAUDE_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}"
       }
     }
   }
