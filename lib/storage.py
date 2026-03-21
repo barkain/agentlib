@@ -43,18 +43,11 @@ def _data_root() -> Path:
     """Resolve the data root directory.
 
     Falls back to ``~/.agentlib/library`` when ``AGENTLIB_DATA`` is unset,
-    empty, or not a usable absolute path.  When ``CLAUDE_PLUGIN_DATA`` is
-    unset the MCP config expands ``${CLAUDE_PLUGIN_DATA}/library`` to the
-    bare string ``/library``; we must treat that as invalid so the fallback
-    kicks in.
+    empty, or not an absolute path.
     """
     env = os.environ.get("AGENTLIB_DATA", "").strip()
-    if env:
-        p = Path(env)
-        # Accept only if it resolves under a real home / data directory,
-        # not a bare root-level path like "/library".
-        if p.is_absolute() and len(p.parts) > 2:
-            return p
+    if env and Path(env).is_absolute():
+        return Path(env)
     return Path.home() / ".agentlib" / "library"
 
 
