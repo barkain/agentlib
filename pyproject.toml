@@ -3,7 +3,7 @@ name = "agentlib"
 version = "0.1.0"
 description = "Agentic Knowledge Navigation System"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastmcp>=2.0",
     "pymupdf>=1.25",
