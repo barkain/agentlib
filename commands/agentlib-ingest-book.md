@@ -1,6 +1,7 @@
 ---
 name: agentlib-ingest-book
 description: Ingest a book (PDF or EPUB) into the AgentLib library
+argument-hint: "<path-to-pdf-or-epub> [--book-id <id>]"
 arguments:
   - name: file_path
     description: Path to the PDF or EPUB file to ingest

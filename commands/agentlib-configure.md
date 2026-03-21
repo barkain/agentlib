@@ -1,6 +1,7 @@
 ---
 name: agentlib-configure
 description: Configure AgentLib settings (LLM provider API keys for book ingestion)
+argument-hint: "[set-key <api-key> | clear-key | set-provider <name> | set-model <model>]"
 arguments:
   - name: action
     description: "Action: 'set-key <key>', 'clear-key [provider]', or empty to show status"
