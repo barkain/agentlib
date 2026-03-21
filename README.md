@@ -39,7 +39,7 @@ Plus a **concept search** shortcut (Ls) that jumps directly to relevant chunks w
 
 ### How raw PDF was read
 
-Claude Code read the entire 400-page PDF and scanned for the answer — 14.7k content tokens, no structure, no way to skip irrelevant pages.
+Claude Code read the entire 80-page PDF and scanned for the answer — 14.7k content tokens, no structure, no way to skip irrelevant pages.
 
 > **Note:** In this test, concept search was not fully functional, so the agent fell back to the `open_book` -> `read_chunks` path (3 calls). With working concept search, the optimal path is `search_concepts` -> `read_chunks` (2 calls, ~3-4k content tokens, ~75% reduction).
 
