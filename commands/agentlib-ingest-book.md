@@ -1,21 +1,15 @@
 ---
-name: agentlib-ingest-book
 description: Ingest a book (PDF or EPUB) into the AgentLib library
 argument-hint: "<path-to-pdf-or-epub> [--book-id <id>]"
-arguments:
-  - name: file_path
-    description: Path to the PDF or EPUB file to ingest
-    required: true
-  - name: book_id
-    description: Optional custom book identifier (default: derived from filename)
-    required: false
 ---
 
-Ingest the book at `$ARGUMENTS.file_path` into the AgentLib library.
+Ingest the specified book into the AgentLib library.
+
+Parse the arguments from `$ARGUMENTS` (raw string). The first positional arg is the file path; an optional `--book-id <id>` flag may follow.
 
 Run the ingestion pipeline:
 ```bash
-cd ${CLAUDE_PLUGIN_ROOT} && uv run python preprocessing/books.py "$ARGUMENTS.file_path" ${ARGUMENTS.book_id:+--book-id "$ARGUMENTS.book_id"}
+cd ${CLAUDE_PLUGIN_ROOT} && uv run python preprocessing/books.py $ARGUMENTS
 ```
 
 This will:

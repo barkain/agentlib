@@ -1,14 +1,11 @@
 ---
-name: agentlib-configure
-description: Configure AgentLib settings (LLM provider API keys for book ingestion)
+description: Configure AgentLib settings (LLM provider API keys)
 argument-hint: "[set-key <api-key> | clear-key | set-provider <name> | set-model <model>]"
-arguments:
-  - name: action
-    description: "Action: 'set-key <key>', 'clear-key [provider]', or empty to show status"
-    required: false
 ---
 
 Configure AgentLib's LLM provider API keys for book ingestion (summarisation).
+
+Parse the action and its parameters from `$ARGUMENTS` (raw string). If empty, show status.
 
 Supported providers: Anthropic (Claude), OpenAI (GPT), xAI (Grok), Google (Gemini), DeepSeek.
 
