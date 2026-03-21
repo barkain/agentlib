@@ -1,0 +1,8 @@
+{
+  "name": "agentlib",
+  "version": "0.1.0",
+  "description": "Agentic Knowledge Navigation System — efficient navigation of books, papers, and databases via structured metadata layers.",
+  "author": {
+    "name": "Nadav Barkain"
+  }
+}
