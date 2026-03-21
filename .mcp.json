@@ -1,9 +1,11 @@
 {
-  "agentlib": {
-    "command": "uv",
-    "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "server.py"],
-    "env": {
-      "AGENTLIB_DATA": "${CLAUDE_PLUGIN_DATA}/library"
+  "mcpServers": {
+    "agentlib": {
+      "command": "uv",
+      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "server.py"],
+      "env": {
+        "AGENTLIB_DATA": "${CLAUDE_PLUGIN_DATA}/library"
+      }
     }
   }
 }
