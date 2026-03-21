@@ -19,8 +19,8 @@ def parse_pdf(path: Path) -> list[ParsedSection]:
     doc = fitz.open(str(path))
     sections: list[ParsedSection] = []
 
-    current_chapter_num = 0
-    current_section_num = 0
+    current_chapter_num = 1
+    current_section_num = 1
     current_chapter_title = "Introduction"
     current_section_title = "Main"
     current_text_parts: list[str] = []
@@ -102,9 +102,9 @@ def parse_pdf(path: Path) -> list[ParsedSection]:
                 current_page_end = page_num + 1
 
     _flush_section()
-    doc.close()
 
     # If no sections were created, create a single section with all text
+    # NOTE: doc must still be open here for the fallback to work
     if not sections:
         full_text = "\n".join(
             block[4].strip()
@@ -122,6 +122,8 @@ def parse_pdf(path: Path) -> list[ParsedSection]:
                 page_start=1,
                 page_end=len(doc),
             ))
+
+    doc.close()
 
     return sections
 
@@ -190,8 +192,8 @@ def parse_epub(path: Path) -> list[ParsedSection]:
     book = epub.read_epub(str(path), options={"ignore_ncx": True})
     sections: list[ParsedSection] = []
 
-    chapter_num = 0
-    section_num = 0
+    chapter_num = 1
+    section_num = 1
     current_chapter_title = "Introduction"
 
     for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):

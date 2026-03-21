@@ -28,6 +28,7 @@ from lib.storage import (
 )
 from lib.summariser import (
     ChapterSummary,
+    SectionSummary,
     extract_concepts,
     summarise_book,
     summarise_chapter,
@@ -152,7 +153,15 @@ def ingest_book(
                 title=ch.title,
                 summary=ch.summary,
                 key_concepts=ch.key_concepts,
-                sections=[],
+                sections=[
+                    SectionSummary(
+                        section_id=sec.id,
+                        title=sec.title,
+                        summary=sec.summary,
+                        chunk_ids=sec.chunk_ids,
+                    )
+                    for sec in ch.sections
+                ],
             )
             for ch in existing_manifest.chapters
         ]

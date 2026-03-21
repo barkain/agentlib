@@ -2,9 +2,41 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from lib.models import Catalog, CatalogEntry, Manifest
+
+# Strict regex for path component validation: alphanumeric, hyphens, underscores, dots
+_SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+
+
+def _validate_path_component(value: str, name: str = "id") -> None:
+    """Validate that a string is safe to use as a path component.
+
+    Rejects path separators, '..', absolute paths, and anything that
+    doesn't match a conservative alphanumeric pattern.
+    """
+    if not value:
+        raise ValueError(f"{name} must not be empty")
+    if not _SAFE_ID_RE.match(value):
+        raise ValueError(
+            f"Invalid {name}: {value!r}. "
+            "Must start with alphanumeric and contain only alphanumeric, hyphen, underscore, or dot."
+        )
+    if ".." in value:
+        raise ValueError(f"{name} must not contain '..'")
+
+
+def _safe_join(root: Path, *parts: str) -> Path:
+    """Join path components and verify the result stays under root."""
+    for part in parts:
+        _validate_path_component(part, name="path component")
+    result = root.joinpath(*parts).resolve()
+    root_resolved = root.resolve()
+    if not str(result).startswith(str(root_resolved) + os.sep) and result != root_resolved:
+        raise ValueError(f"Path escapes root directory: {result}")
+    return result
 
 
 def _data_root() -> Path:
@@ -58,7 +90,8 @@ def update_catalog_entry(entry: CatalogEntry) -> Catalog:
 
 def read_manifest(book_id: str) -> Manifest | None:
     """Read a book manifest. Returns None if not found."""
-    path = _books_root() / book_id / "manifest.json"
+    _validate_path_component(book_id, "book_id")
+    path = _safe_join(_books_root(), book_id, "manifest.json")
     if not path.exists():
         return None
     return Manifest.from_json(path.read_text(encoding="utf-8"))
@@ -66,7 +99,8 @@ def read_manifest(book_id: str) -> Manifest | None:
 
 def write_manifest(manifest: Manifest) -> Path:
     """Write a book manifest to disk."""
-    path = _books_root() / manifest.book_id / "manifest.json"
+    _validate_path_component(manifest.book_id, "book_id")
+    path = _safe_join(_books_root(), manifest.book_id, "manifest.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(manifest.to_json(), encoding="utf-8")
     return path
@@ -77,12 +111,15 @@ def write_manifest(manifest: Manifest) -> Path:
 # ---------------------------------------------------------------------------
 
 def _chunk_dir(book_id: str) -> Path:
-    return _books_root() / book_id / "chunks"
+    _validate_path_component(book_id, "book_id")
+    return _safe_join(_books_root(), book_id, "chunks")
 
 
 def read_chunk(book_id: str, chunk_id: str) -> str | None:
     """Read a single chunk file. Returns None if not found."""
-    path = _chunk_dir(book_id) / f"{chunk_id}.md"
+    _validate_path_component(book_id, "book_id")
+    _validate_path_component(chunk_id, "chunk_id")
+    path = _safe_join(_books_root(), book_id, "chunks", f"{chunk_id}.md")
     if not path.exists():
         return None
     return path.read_text(encoding="utf-8")
@@ -90,20 +127,24 @@ def read_chunk(book_id: str, chunk_id: str) -> str | None:
 
 def read_chunks(book_id: str, chunk_ids: list[str]) -> dict[str, str | None]:
     """Read multiple chunks. Returns dict of chunk_id -> content (None if missing)."""
+    _validate_path_component(book_id, "book_id")
     return {cid: read_chunk(book_id, cid) for cid in chunk_ids}
 
 
 def write_chunk(book_id: str, chunk_id: str, content: str) -> Path:
     """Write a single chunk file to disk."""
+    _validate_path_component(book_id, "book_id")
+    _validate_path_component(chunk_id, "chunk_id")
     chunk_dir = _chunk_dir(book_id)
     chunk_dir.mkdir(parents=True, exist_ok=True)
-    path = chunk_dir / f"{chunk_id}.md"
+    path = _safe_join(_books_root(), book_id, "chunks", f"{chunk_id}.md")
     path.write_text(content, encoding="utf-8")
     return path
 
 
 def list_chunks(book_id: str) -> list[str]:
     """List all chunk IDs for a book."""
+    _validate_path_component(book_id, "book_id")
     chunk_dir = _chunk_dir(book_id)
     if not chunk_dir.exists():
         return []
@@ -112,12 +153,14 @@ def list_chunks(book_id: str) -> list[str]:
 
 def book_exists(book_id: str) -> bool:
     """Check if a book directory exists."""
-    return (_books_root() / book_id).is_dir()
+    _validate_path_component(book_id, "book_id")
+    return _safe_join(_books_root(), book_id).is_dir()
 
 
 def book_dir(book_id: str) -> Path:
     """Return the path to a book's directory."""
-    return _books_root() / book_id
+    _validate_path_component(book_id, "book_id")
+    return _safe_join(_books_root(), book_id)
 
 
 # ---------------------------------------------------------------------------
