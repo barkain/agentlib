@@ -1,0 +1,23 @@
+model: claude-sonnet-4-20260320
+temperature: 0
+max_tokens: 4096
+max_tool_calls_per_question: 15
+trials_per_condition: 3
+scoring_model: claude-sonnet-4-20260320
+
+corpus:
+  dir: benchmark/corpus
+  books: []
+
+questions_dir: benchmark/questions
+ground_truth_dir: benchmark/ground_truth
+results_dir: benchmark/results
+
+baseline:
+  max_pages_per_read: 10
+
+agentlib:
+  data_dir: benchmark/corpus/agentlib
+
+ci:
+  budget_limit_usd: 100
