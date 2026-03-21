@@ -10,6 +10,7 @@ def _load_env() -> None:
     candidates = [
         os.environ.get("CLAUDE_PLUGIN_DATA", ""),
         os.environ.get("AGENTLIB_DATA", ""),
+        str(_Path.home() / ".claude" / "plugins" / "agentlib"),
     ]
     for base in candidates:
         if not base:

@@ -48,7 +48,7 @@ def _data_root() -> Path:
     env = os.environ.get("AGENTLIB_DATA", "").strip()
     if env and Path(env).is_absolute():
         return Path(env)
-    return Path.home() / ".agentlib" / "library"
+    return Path.home() / ".claude" / "plugins" / "agentlib" / "library"
 
 
 def _books_root() -> Path:

@@ -14,7 +14,7 @@ Supported providers: Anthropic (Claude), OpenAI (GPT), xAI (Grok), Google (Gemin
 ## Actions
 
 ### Show status (no arguments)
-Check which providers are configured. Read `${CLAUDE_PLUGIN_DATA}/.env` and report:
+Check which providers are configured. Read `${CLAUDE_PLUGIN_DATA}/.env` (or `~/.claude/plugins/agentlib/.env` as fallback) and report:
 - Which API keys are set (show first 8 chars + "..." for each, never the full key)
 - Which provider is currently active (based on `AGENTLIB_PROVIDER` or auto-detection order)
 - Current model override if `AGENTLIB_MODEL` is set
@@ -29,7 +29,7 @@ Auto-detection priority: Anthropic > OpenAI > xAI > Google > DeepSeek.
    - `gsk_` or starts with `AI` -> GOOGLE_API_KEY
    - `sk-` with no other match -> ask the user which provider
    - Other -> ask the user which provider (anthropic, openai, xai, google, deepseek)
-2. Create the directory: `mkdir -p "${CLAUDE_PLUGIN_DATA}"`
+2. Create the directory: `mkdir -p "${CLAUDE_PLUGIN_DATA}"` (defaults to `~/.claude/plugins/agentlib/`)
 3. Read existing `.env` if it exists (preserve other keys)
 4. Add or update the appropriate `<PROVIDER>_API_KEY=<key>` line
 5. Write the file with no quotes around values
