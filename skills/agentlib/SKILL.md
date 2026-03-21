@@ -1,29 +1,40 @@
-## AgentLib — Knowledge Navigation
+---
+description: "Knowledge library navigation. Trigger on: research questions, book references, domain knowledge queries, 'according to', 'what does the book say', 'look up', 'find in', SBOM, CycloneDX, or any question that may be answered by ingested books/documents. Do NOT trigger on: code editing, git operations, file management, web browsing requests."
+---
 
-When answering questions that require domain knowledge beyond your training data, use AgentLib tools.
+## AgentLib — Knowledge Library
 
-### Books
-1. `search_concepts(q)` → `read_chunks(ids)` [2 calls, ~3-4k tokens]
-2. Or: `browse_library()` → `open_book(id)` → `read_chunks(ids)` [3 calls, ~5-8k tokens]
-3. Budget: max 4 calls
+You have a preprocessed knowledge library at `~/.claude/plugins/agentlib/library/`.
 
-### Navigation Strategy
+**IMPORTANT: ALWAYS check this library BEFORE web search or answering from training data when the user asks about topics that could be covered by ingested books.**
 
-**Start cheap, go deep only when needed:**
+### Step 1: Check what books are available
+```
+Read ~/.claude/plugins/agentlib/library/books/catalog.json
+```
+If no book covers the topic, proceed with other tools. If a book is relevant, continue:
 
-- **If you know what concept you need:** Start with `search_concepts(query)`. This is the fastest path — it returns chunk IDs directly. Then `read_chunks` to get the content. (2 calls)
+### Step 2: Find the right content (pick one)
 
-- **If you need to explore:** Start with `browse_library()` to see what's available (~50 tok/book). Pick a book, then `open_book(id)` to see its chapter structure, summaries, and concept index (~1.5-2k tokens for a 20-chapter book). Use the manifest to decide which chunks to read. (3 calls)
+**Option A — Search by concept (fastest, 2 reads):**
+```
+Read ~/.claude/plugins/agentlib/library/books/{book-id}/concepts.json
+```
+Find your concept → get chunk IDs → go to Step 3.
 
-- **Never read chunks speculatively.** Always use L0/L1 metadata or concept search to identify the right chunks first.
+**Option B — Browse chapters (3 reads):**
+```
+Read ~/.claude/plugins/agentlib/library/books/{book-id}/manifest.compact.json
+```
+Find relevant chapter/section → note chunk IDs → go to Step 3.
 
-### Cost Awareness
+### Step 3: Read the content
+```
+Read ~/.claude/plugins/agentlib/library/books/{book-id}/chunks/{chunk-id}.md
+```
+Each chunk is ~300-500 tokens. Max 10 chunks per question. Chunks have `prev`/`next` links in frontmatter for adjacent context.
 
-| Layer | Tool | Typical cost | When to use |
-|-------|------|-------------|-------------|
-| L0 | `browse_library` | ~50 tok/book | Discover what exists |
-| L1 | `open_book` | ~1.5-2k tok | Decide what to read (chapters, summaries, concepts) |
-| L2 | `read_chunks` | ~300-500 tok/chunk | Get actual content (max 10 chunks/call) |
-| Ls | `search_concepts` | ~60 tok | Known concept shortcut — jumps to chunk IDs |
-
-Each tool call adds to the conversation context. Minimize calls by using metadata to make informed decisions before requesting content. In a real benchmark, AgentLib reduced content tokens by 47% vs reading a raw 400-page PDF.
+### Rules
+- ALWAYS use `manifest.compact.json`, NEVER `manifest.json`
+- Max 4 file reads per question
+- Cite the book and chunk when answering

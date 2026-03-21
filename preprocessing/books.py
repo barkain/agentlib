@@ -277,6 +277,17 @@ def ingest_book(
     write_manifest(manifest)
     logger.info("  Wrote manifest.json")
 
+    # Write zero-server navigation files
+    from lib.storage import (
+        write_compact_manifest,
+        write_concept_index,
+        write_navigation_md,
+    )
+    write_compact_manifest(manifest)
+    logger.info("  Wrote manifest.compact.json")
+    write_concept_index(book_id, manifest.concept_index)
+    logger.info("  Wrote concepts.json")
+
     # Update catalog
     total_chunks = sum(
         len(chunk_ids)
@@ -294,6 +305,10 @@ def ingest_book(
     )
     update_catalog_entry(catalog_entry)
     logger.info("  Updated catalog.json")
+
+    # Regenerate NAVIGATION.md with updated library listing
+    write_navigation_md()
+    logger.info("  Wrote NAVIGATION.md")
 
     logger.info(
         "Done! Book '%s' ingested: %d chapters, %d chunks",
