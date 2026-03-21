@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/hero.png" alt="AgentLib — Agentic Knowledge Navigation" width="100%">
+</p>
+
 # AgentLib
 
 **AI agents waste massive tokens navigating knowledge because they have no map.**
