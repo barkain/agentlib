@@ -10,6 +10,7 @@ dependencies = [
     "ebooklib>=0.18",
     "tiktoken>=0.9",
     "anthropic>=0.52",
+    "openai>=1.0",
 ]
 
 [project.scripts]

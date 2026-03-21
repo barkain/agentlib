@@ -1,18 +1,10 @@
-"""Haiku-based summarisation: chapter summaries + concept extraction."""
+"""LLM-based summarisation: chapter summaries + concept extraction."""
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
 
-import anthropic
-
-
-DEFAULT_MODEL = "claude-haiku-4-5-20251001"
-
-
-def _get_client() -> anthropic.Anthropic:
-    """Get Anthropic client. API key from environment."""
-    return anthropic.Anthropic()
+from lib.llm import LLMConfig, call_llm, detect_provider
 
 
 @dataclass
@@ -43,24 +35,31 @@ class ConceptMapping:
     chunks: list[str] = field(default_factory=list)
 
 
+def _get_config(llm_config: LLMConfig | None) -> LLMConfig:
+    """Return provided config or auto-detect from environment."""
+    if llm_config is not None:
+        return llm_config
+    return detect_provider()
+
+
 def summarise_chapter(
     chapter_id: str,
     chapter_title: str,
     sections: list[dict],
-    model: str = DEFAULT_MODEL,
+    llm_config: LLMConfig | None = None,
 ) -> ChapterSummary:
-    """Summarise a single chapter using Haiku.
+    """Summarise a single chapter using an LLM.
 
     Args:
         chapter_id: Chapter identifier (e.g., "ch01").
         chapter_title: Chapter title.
         sections: List of dicts with keys: section_id, title, text, chunk_ids.
-        model: Anthropic model to use.
+        llm_config: LLM provider config. Auto-detected if None.
 
     Returns:
         ChapterSummary with chapter and section summaries + key concepts.
     """
-    client = _get_client()
+    config = _get_config(llm_config)
 
     sections_text = ""
     for sec in sections:
@@ -89,13 +88,7 @@ Respond with ONLY valid JSON in this exact format:
 
 Key concepts should be specific, searchable terms (3-5 per chapter). Section summaries should be concise (1 sentence each)."""
 
-    response = client.messages.create(
-        model=model,
-        max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    result_text = response.content[0].text.strip()
+    result_text = call_llm(config, prompt, max_tokens=1024)
     # Extract JSON from response (handle markdown code blocks)
     if result_text.startswith("```"):
         lines = result_text.split("\n")
@@ -130,9 +123,9 @@ Key concepts should be specific, searchable terms (3-5 per chapter). Section sum
 def extract_concepts(
     book_id: str,
     chapter_summaries: list[ChapterSummary],
-    model: str = DEFAULT_MODEL,
+    llm_config: LLMConfig | None = None,
 ) -> dict[str, list[ConceptMapping]]:
-    """Extract a concept index for the entire book using Haiku.
+    """Extract a concept index for the entire book using an LLM.
 
     One LLM call. Given all chapter summaries and their key concepts,
     produces a unified concept index.
@@ -140,7 +133,7 @@ def extract_concepts(
     Returns:
         Dict mapping concept name -> list of ConceptMapping.
     """
-    client = _get_client()
+    config = _get_config(llm_config)
 
     chapters_text = ""
     for ch in chapter_summaries:
@@ -169,13 +162,7 @@ Respond with ONLY valid JSON in this exact format:
 
 Include 20-50 concepts. Use specific, searchable terms. Merge similar concepts."""
 
-    response = client.messages.create(
-        model=model,
-        max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    result_text = response.content[0].text.strip()
+    result_text = call_llm(config, prompt, max_tokens=4096)
     if result_text.startswith("```"):
         lines = result_text.split("\n")
         result_text = "\n".join(lines[1:-1])
@@ -201,14 +188,14 @@ def summarise_book(
     book_id: str,
     title: str,
     chapter_summaries: list[ChapterSummary],
-    model: str = DEFAULT_MODEL,
+    llm_config: LLMConfig | None = None,
 ) -> str:
     """Generate a 1-2 sentence book summary from chapter summaries.
 
     Returns:
         Book summary string.
     """
-    client = _get_client()
+    config = _get_config(llm_config)
 
     chapters_text = "\n".join(
         f"- {ch.title}: {ch.summary}" for ch in chapter_summaries
@@ -220,10 +207,4 @@ def summarise_book(
 
 Write a 1-2 sentence summary of the entire book. Be specific about what it covers and its main purpose. Respond with ONLY the summary text, nothing else."""
 
-    response = client.messages.create(
-        model=model,
-        max_tokens=256,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    return response.content[0].text.strip()
+    return call_llm(config, prompt, max_tokens=256)

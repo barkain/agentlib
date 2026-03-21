@@ -60,6 +60,7 @@ from lib.storage import (
     write_chunk,
     write_manifest,
 )
+from lib.llm import LLMConfig, detect_provider
 from lib.summariser import (
     ChapterSummary,
     SectionSummary,
@@ -117,6 +118,7 @@ def ingest_book(
     file_path: Path,
     book_id: str | None = None,
     force: bool = False,
+    llm_config: LLMConfig | None = None,
 ) -> str:
     """Run the full ingestion pipeline for a book.
 
@@ -124,10 +126,14 @@ def ingest_book(
         file_path: Path to PDF or EPUB file.
         book_id: Optional book identifier. Derived from filename if not given.
         force: If True, re-run all stages even if outputs exist.
+        llm_config: LLM provider config. Auto-detected if None.
 
     Returns:
         The book_id of the ingested book.
     """
+    if llm_config is None:
+        llm_config = detect_provider()
+    logger.info("Using LLM provider: %s (%s)", llm_config.provider, llm_config.model)
     if book_id is None:
         book_id = _slugify(file_path.name)
 
@@ -217,7 +223,7 @@ def ingest_book(
                     "chunk_ids": sec_chunk_ids,
                 })
 
-            summary = summarise_chapter(ch_id, ch_title, sec_data)
+            summary = summarise_chapter(ch_id, ch_title, sec_data, llm_config=llm_config)
             chapter_summaries.append(summary)
 
         logger.info("  Summarised %d chapters", len(chapter_summaries))
@@ -230,7 +236,7 @@ def ingest_book(
         book_summary = _lookup_catalog_summary(book_id)
     else:
         # Extract concepts (1 LLM call)
-        concept_mappings = extract_concepts(book_id, chapter_summaries)
+        concept_mappings = extract_concepts(book_id, chapter_summaries, llm_config=llm_config)
         concept_index_raw: dict[str, list[ConceptEntry]] = {}
         for concept, mappings in concept_mappings.items():
             concept_index_raw[concept] = [
@@ -240,7 +246,7 @@ def ingest_book(
 
         # Book summary (1 LLM call)
         title = file_path.stem.replace("-", " ").replace("_", " ").title()
-        book_summary = summarise_book(book_id, title, chapter_summaries)
+        book_summary = summarise_book(book_id, title, chapter_summaries, llm_config=llm_config)
 
     # Build manifest
     chapters: list[ChapterInfo] = []
