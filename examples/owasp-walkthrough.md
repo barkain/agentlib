@@ -21,7 +21,7 @@ This is the kind of dense reference material that benefits most from AgentLib: a
 
 ```bash
 agentlib ingest \
-  --source "https://owasp.org/www-project-web-security-testing-guide/v42/OWASP_Testing_Guide_v4.2.pdf" \
+  --source "https://github.com/OWASP/wstg/releases/download/v4.2/wstg-v4.2.pdf" \
   --id owasp-wstg-v42
 ```
 
