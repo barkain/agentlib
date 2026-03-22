@@ -15,7 +15,7 @@ AgentLib gives agents a map.
 AgentLib has two parts:
 
 1. **Ingestion pipeline** — preprocesses books, papers, and databases into small, self-contained chunks with lightweight metadata at multiple layers.
-2. **Universal navigation skill** — a single skill (`agentlib:knowledge`) that teaches the agent to read cheap metadata first, then drill into specific chunks.
+2. **Universal navigation skill** — a single skill (`knowledge`) that teaches the agent to read cheap metadata first, then drill into specific chunks.
 
 No MCP server required. No tool calls. The agent reads preprocessed files directly from `~/.claude/plugins/agentlib/library/`.
 
@@ -114,8 +114,8 @@ claude --plugin-dir ./agentlib
 **Auto-trigger** — just ask naturally. The skill activates when it detects research/knowledge questions:
 > "What specific actor frameworks does the book mention for multiagent communication?"
 
-**Explicit invocation** — prefix with `/agentlib:knowledge` when you want the book's answer, not Claude's training data:
-> /agentlib:knowledge What defensive techniques protect against prompt injection?
+**Explicit invocation** — prefix with `/knowledge` when you want the book's answer, not Claude's training data:
+> /knowledge What defensive techniques protect against prompt injection?
 
 Use explicit invocation when Claude might already know the answer but you want the book's specific take.
 
