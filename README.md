@@ -109,13 +109,15 @@ claude --plugin-dir ./agentlib
 /agentlib-ingest-book ~/books/owasp-guide.pdf
 ```
 
-### Query naturally
-The agent uses the `agentlib:knowledge` skill to navigate the library automatically:
-```
-"What does OWASP say about token rotation?"
-"What are the most effective approaches for reducing hallucination in LLMs?"
-"Total revenue by customer region last quarter, excluding cancelled orders?"
-```
+### Querying
+
+**Auto-trigger** — just ask naturally. The skill activates when it detects research/knowledge questions:
+> "What specific actor frameworks does the book mention for multiagent communication?"
+
+**Explicit invocation** — prefix with `/agentlib:knowledge` when you want the book's answer, not Claude's training data:
+> /agentlib:knowledge What defensive techniques protect against prompt injection?
+
+Use explicit invocation when Claude might already know the answer but you want the book's specific take.
 
 The skill teaches the agent to read `catalog.json` or `concepts.json` first (cheap), then drill into specific chunks (expensive) — no server process, no tool overhead.
 

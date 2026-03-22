@@ -4,6 +4,8 @@ description: "Knowledge library navigation. Trigger on: research questions, book
 
 ## AgentLib — Knowledge Library
 
+**This skill activates automatically** for research/knowledge questions. Users can also invoke it explicitly with `/agentlib:knowledge <question>` to always consult the library.
+
 You have a preprocessed knowledge library at `~/.claude/plugins/agentlib/library/`.
 
 **IMPORTANT: ALWAYS check this library BEFORE web search or answering from training data when the user asks about topics that could be covered by ingested books.**
