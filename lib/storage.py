@@ -42,8 +42,8 @@ def _safe_join(root: Path, *parts: str) -> Path:
 def _data_root() -> Path:
     """Resolve the data root directory.
 
-    Falls back to ``~/.agentlib/library`` when ``AGENTLIB_DATA`` is unset,
-    empty, or not an absolute path.
+    Falls back to ``~/.claude/plugins/agentlib/library`` when ``AGENTLIB_DATA``
+    is unset, empty, or not an absolute path.
     """
     env = os.environ.get("AGENTLIB_DATA", "").strip()
     if env and Path(env).is_absolute():
@@ -242,6 +242,9 @@ def write_concept_index(book_id: str, concept_index: dict) -> Path:
     for concept, entries in concept_index.items():
         chunk_ids: list[str] = []
         for entry in entries:
+            # Duck-type: callers pass ConceptEntry objects (with .chunks attr)
+            # or dicts (from deserialized JSON). Normalizing callers is out of
+            # scope for this PR.
             if hasattr(entry, "chunks"):
                 chunk_ids.extend(entry.chunks)
             elif isinstance(entry, dict):

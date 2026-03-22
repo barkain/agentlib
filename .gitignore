@@ -7,6 +7,7 @@ dist/
 .mypy_cache/
 .ruff_cache/
 .claude/
+.scratch/
 uv.lock
 .env
 .env.*
