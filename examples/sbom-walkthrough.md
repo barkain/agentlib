@@ -17,12 +17,14 @@ This is the kind of dense reference material that benefits most from AgentLib: a
 
 ## 2. Ingestion
 
-### Command
+### Step 1: Download the PDF
 
-```bash
-agentlib ingest \
-  --source "https://cyclonedx.org/guides/OWASP_CycloneDX-Authoritative-Guide-to-SBOM-en.pdf" \
-  --id authoritativeguide-to-sbom
+Download from: https://cyclonedx.org/guides/OWASP_CycloneDX-Authoritative-Guide-to-SBOM-en.pdf
+
+### Step 2: Ingest
+
+```
+/agentlib:agentlib-ingest-book ~/Downloads/OWASP_CycloneDX-Authoritative-Guide-to-SBOM-en.pdf
 ```
 
 ### What happens at each stage
