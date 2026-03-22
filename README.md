@@ -106,7 +106,7 @@ claude --plugin-dir ./agentlib
 
 ### Ingest a book
 ```bash
-/agentlib-ingest-book ~/books/owasp-guide.pdf
+/agentlib:agentlib-ingest-book ~/books/owasp-guide.pdf
 ```
 
 ### Querying
