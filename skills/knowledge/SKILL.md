@@ -1,4 +1,5 @@
 ---
+name: knowledge
 description: "Knowledge library navigation. Trigger on: research questions, book references, domain knowledge queries, 'according to', 'what does the book say', 'look up', 'find in', or any question that may be answered by ingested books/documents. Do NOT trigger on: code editing, git operations, file management, web browsing requests."
 ---
 
