@@ -248,6 +248,9 @@ def write_concept_index(book_id: str, concept_index: dict) -> Path:
                 chunk_ids.extend(entry.get("chunks", []))
         flat[concept] = chunk_ids
 
+    # Filter out concepts with no chunks
+    flat = {k: v for k, v in flat.items() if v}
+
     path = _safe_join(_books_root(), book_id, "concepts.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(flat, indent=2), encoding="utf-8")

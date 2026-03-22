@@ -238,6 +238,22 @@ def ingest_book(
     else:
         # Extract concepts (1 LLM call)
         concept_mappings = extract_concepts(book_id, chapter_summaries, llm_config=llm_config)
+
+        # Post-process: fill in missing chunk_ids from section_chunks mapping
+        for concept, mappings in concept_mappings.items():
+            for m in mappings:
+                if not m.chunks:
+                    # Look up chunk_ids from section_chunks mapping
+                    sec_chunks = section_chunks.get(m.sec, [])
+                    if sec_chunks:
+                        m.chunks = sec_chunks
+                    elif m.ch:
+                        # Fallback: find any chunks for this chapter
+                        ch_chunks = [cid for sec_id, cids in section_chunks.items()
+                                     if sec_id.startswith(m.ch) for cid in cids]
+                        if ch_chunks:
+                            m.chunks = ch_chunks[:3]  # Cap at 3 to keep index compact
+
         concept_index_raw: dict[str, list[ConceptEntry]] = {}
         for concept, mappings in concept_mappings.items():
             concept_index_raw[concept] = [
