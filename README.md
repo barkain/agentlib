@@ -15,9 +15,11 @@ AgentLib gives agents a map.
 AgentLib has two parts:
 
 1. **Ingestion pipeline** — preprocesses books, papers, and databases into small, self-contained chunks with lightweight metadata at multiple layers.
-2. **Universal navigation skill** — a single skill (`/agentlib`) that teaches the agent to read cheap metadata first, then drill into specific chunks.
+2. **Universal navigation skill** — a single skill (`agentlib:knowledge`) that teaches the agent to read cheap metadata first, then drill into specific chunks.
 
-No MCP server. No tool calls. The agent reads preprocessed files directly from `~/.claude/plugins/agentlib/library/`.
+No MCP server required. No tool calls. The agent reads preprocessed files directly from `~/.claude/plugins/agentlib/library/`.
+
+> **Note:** `server.py` is included for optional MCP usage and benchmarking but is not required for normal operation.
 
 ### Three metadata layers
 
@@ -94,6 +96,12 @@ The core principle: *no heavy indexing, no vector databases — just smart, ligh
 /plugin install agentlib
 ```
 
+Or install manually:
+```bash
+git clone https://github.com/barkain/agentlib.git
+claude --plugin-dir ./agentlib
+```
+
 ## Usage
 
 ### Ingest a book
@@ -102,7 +110,7 @@ The core principle: *no heavy indexing, no vector databases — just smart, ligh
 ```
 
 ### Query naturally
-The agent uses the `/agentlib` skill to navigate the library automatically:
+The agent uses the `agentlib:knowledge` skill to navigate the library automatically:
 ```
 "What does OWASP say about token rotation?"
 "What are the most effective approaches for reducing hallucination in LLMs?"

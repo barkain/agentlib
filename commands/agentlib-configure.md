@@ -32,7 +32,7 @@ Auto-detection priority: Anthropic > OpenAI > xAI > Google > DeepSeek.
 4. Add or update the appropriate `<PROVIDER>_API_KEY=<key>` line
 5. Write the file with no quotes around values
 6. Set permissions: `chmod 600 "${CLAUDE_PLUGIN_DATA}/.env"`
-7. Confirm: "API key configured for <provider>. Restart the session or run /reload-plugins for the MCP server to pick it up."
+7. Confirm: "API key configured for <provider>. This will be used for the next ingestion."
 
 ### Clear key: `/agentlib-configure clear-key [provider]`
 1. If provider is specified, remove that provider's API key line from `.env`
@@ -61,4 +61,4 @@ Auto-detection priority: Anthropic > OpenAI > xAI > Google > DeepSeek.
 - Never log or display the full API key
 - The .env file must be chmod 600 (contains credentials)
 - Shell environment variables always take precedence over .env values
-- Changes require a session restart or /reload-plugins to take effect
+- Changes take effect on the next ingestion run.

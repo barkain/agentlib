@@ -1,5 +1,5 @@
 ---
-description: "Knowledge library navigation. Trigger on: research questions, book references, domain knowledge queries, 'according to', 'what does the book say', 'look up', 'find in', SBOM, CycloneDX, or any question that may be answered by ingested books/documents. Do NOT trigger on: code editing, git operations, file management, web browsing requests."
+description: "Knowledge library navigation. Trigger on: research questions, book references, domain knowledge queries, 'according to', 'what does the book say', 'look up', 'find in', or any question that may be answered by ingested books/documents. Do NOT trigger on: code editing, git operations, file management, web browsing requests."
 ---
 
 ## AgentLib — Knowledge Library
@@ -32,9 +32,9 @@ Find relevant chapter/section → note chunk IDs → go to Step 3.
 ```
 Read ~/.claude/plugins/agentlib/library/books/{book-id}/chunks/{chunk-id}.md
 ```
-Each chunk is ~300-500 tokens. Max 10 chunks per question. Chunks have `prev`/`next` links in frontmatter for adjacent context.
+Each chunk is ~300-500 tokens. Chunks have `prev`/`next` links in frontmatter for adjacent context.
 
 ### Rules
 - ALWAYS use `manifest.compact.json`, NEVER `manifest.json`
-- Max 4 file reads per question
+- Max 4 navigation reads (catalog + manifest + concepts). Then read up to 5 chunks as needed.
 - Cite the book and chunk when answering
