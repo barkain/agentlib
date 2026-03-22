@@ -19,8 +19,6 @@ AgentLib has two parts:
 
 No MCP server required. No tool calls. The agent reads preprocessed files directly from `~/.claude/plugins/agentlib/library/`.
 
-> **Note:** `server.py` is included for optional MCP usage and benchmarking but is not required for normal operation.
-
 ### Three metadata layers
 
 ```
@@ -47,7 +45,7 @@ library/
 
 ## Real-World Results
 
-### Result 1 — 82% reduction
+### Actor Frameworks Query — 82% reduction
 
 **Question:** "What specific actor frameworks does the book mention for multiagent communication?"
 
@@ -61,7 +59,7 @@ library/
 
 **How raw PDF was read:** read TOC → landed on wrong pages → re-read → answer. 38.6k content tokens, multiple wasted reads.
 
-### Result 2 — 47% reduction
+### SBOM Maturity Levels Query — 47% reduction
 
 **Question:** "What are the maturity levels for SBOM according to the CycloneDX standard?"
 
@@ -88,18 +86,16 @@ Simulated on realistic workloads (15-book library, 487-paper corpus, 80-table da
 
 The core principle: *no heavy indexing, no vector databases — just smart, lightweight metadata and small content blobs.*
 
-## Installation
+## Install
 
 ```bash
-# As a Claude Code plugin
-/plugin marketplace add barkain/agentlib
-/plugin install agentlib
-```
-
-Or install manually:
-```bash
+# From GitHub
 git clone https://github.com/barkain/agentlib.git
 claude --plugin-dir ./agentlib
+
+# Or add as a marketplace plugin
+/plugin marketplace add barkain/agentlib
+/plugin install agentlib
 ```
 
 ## Usage
@@ -107,6 +103,16 @@ claude --plugin-dir ./agentlib
 ### Ingest a book
 ```bash
 /agentlib:agentlib-ingest-book ~/books/owasp-guide.pdf
+```
+
+### Configure API key
+```bash
+/agentlib:agentlib-configure set-key <your-api-key>
+```
+
+### Browse the library
+```bash
+/agentlib:agentlib-library
 ```
 
 ### Querying
