@@ -1,6 +1,6 @@
 {
   "name": "agentlib",
-  "version": "0.1.0",
+  "version": "1.2.0",
   "description": "Agentic Knowledge Navigation — ingest books/papers/databases into chunked metadata layers, then navigate them via a universal skill. No MCP server required.",
   "author": {
     "name": "Nadav Barkain"
