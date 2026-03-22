@@ -8,3 +8,8 @@ dist/
 .ruff_cache/
 .claude/
 uv.lock
+.env
+.env.*
+*.key
+*.pem
+*.secret

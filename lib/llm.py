@@ -105,23 +105,39 @@ def _call_anthropic(config: LLMConfig, prompt: str, max_tokens: int) -> str:
     """Call Anthropic API via their SDK."""
     import anthropic  # type: ignore[import-untyped]
 
-    client = anthropic.Anthropic(api_key=config.api_key)
-    response = client.messages.create(
-        model=config.model,
-        max_tokens=max_tokens,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return response.content[0].text.strip()
+    try:
+        client = anthropic.Anthropic(api_key=config.api_key)
+        response = client.messages.create(
+            model=config.model,
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.content[0].text.strip()
+    except Exception as e:
+        raise RuntimeError(f"Anthropic API call failed ({type(e).__name__}): {_sanitize_error(str(e))}") from None
 
 
 def _call_openai_compat(config: LLMConfig, prompt: str, max_tokens: int) -> str:
     """Call OpenAI-compatible API (works for OpenAI, xAI, Google, DeepSeek)."""
     from openai import OpenAI  # type: ignore[import-untyped]
 
-    client = OpenAI(api_key=config.api_key, base_url=config.base_url)
-    response = client.chat.completions.create(
-        model=config.model,
-        max_tokens=max_tokens,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return response.choices[0].message.content.strip()
+    try:
+        client = OpenAI(api_key=config.api_key, base_url=config.base_url)
+        response = client.chat.completions.create(
+            model=config.model,
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        raise RuntimeError(f"LLM API call failed ({type(e).__name__}): {_sanitize_error(str(e))}") from None
+
+
+def _sanitize_error(msg: str) -> str:
+    """Remove potential API keys and URLs from error messages."""
+    import re
+    # Redact anything that looks like an API key
+    msg = re.sub(r'sk-[a-zA-Z0-9_-]{10,}', 'sk-***REDACTED***', msg)
+    msg = re.sub(r'xai-[a-zA-Z0-9_-]{10,}', 'xai-***REDACTED***', msg)
+    msg = re.sub(r'key-[a-zA-Z0-9_-]{10,}', 'key-***REDACTED***', msg)
+    return msg
