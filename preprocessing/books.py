@@ -59,7 +59,10 @@ from lib.storage import (
     read_manifest,
     update_catalog_entry,
     write_chunk,
+    write_compact_manifest,
+    write_concept_index,
     write_manifest,
+    write_navigation_md,
 )
 from lib.llm import LLMConfig, detect_provider
 from lib.summariser import (
@@ -99,19 +102,24 @@ def _group_by_chapter(
     return dict(groups)
 
 
+def _section_id_from_chunk(chunk_id: str) -> str:
+    """Derive section ID from chunk ID (e.g., 'ch01-s01-001' -> 'ch01-s01')."""
+    parts = chunk_id.rsplit("-", 1)
+    return parts[0] if len(parts) == 2 else chunk_id
+
+
+def _title_from_path(file_path: Path) -> str:
+    """Derive a human-readable title from a file path."""
+    return file_path.stem.replace("-", " ").replace("_", " ").title()
+
+
 def _group_chunks_by_section(
     chunks: list[Chunk],
 ) -> dict[str, list[str]]:
     """Map section_id -> list of chunk_ids."""
     result: dict[str, list[str]] = defaultdict(list)
     for chunk in chunks:
-        # Extract section from chunk_id: "ch01-s01-001" -> "ch01-s01"
-        parts = chunk.chunk_id.rsplit("-", 1)
-        if len(parts) == 2:
-            section_id = parts[0]
-        else:
-            section_id = chunk.chunk_id
-        result[section_id].append(chunk.chunk_id)
+        result[_section_id_from_chunk(chunk.chunk_id)].append(chunk.chunk_id)
     return dict(result)
 
 
@@ -177,9 +185,7 @@ def ingest_book(
         existing = list_chunks(book_id)
         section_chunks_map: dict[str, list[str]] = defaultdict(list)
         for cid in existing:
-            parts = cid.rsplit("-", 1)
-            sec_id = parts[0] if len(parts) == 2 else cid
-            section_chunks_map[sec_id].append(cid)
+            section_chunks_map[_section_id_from_chunk(cid)].append(cid)
         section_chunks = dict(section_chunks_map)
 
     # --- Stage 4: Summarise ---
@@ -238,6 +244,27 @@ def ingest_book(
     else:
         # Extract concepts (1 LLM call)
         concept_mappings = extract_concepts(book_id, chapter_summaries, llm_config=llm_config)
+
+        # Post-process: fill in missing chunk_ids from section_chunks mapping
+        # Pre-build chapter lookup for fallback
+        chapter_chunks: dict[str, list[str]] = defaultdict(list)
+        for sec_id, cids in section_chunks.items():
+            ch_id = sec_id.split("-")[0] if "-" in sec_id else sec_id
+            chapter_chunks[ch_id].extend(cids)
+
+        for concept, mappings in concept_mappings.items():
+            for m in mappings:
+                if not m.chunks:
+                    # Look up chunk_ids from section_chunks mapping
+                    sec_chunks = section_chunks.get(m.sec, [])
+                    if sec_chunks:
+                        m.chunks = sec_chunks
+                    elif m.ch:
+                        # Fallback: find any chunks for this chapter
+                        ch_chunks = chapter_chunks.get(m.ch, [])[:3]
+                        if ch_chunks:
+                            m.chunks = ch_chunks  # Cap at 3 to keep index compact
+
         concept_index_raw: dict[str, list[ConceptEntry]] = {}
         for concept, mappings in concept_mappings.items():
             concept_index_raw[concept] = [
@@ -246,7 +273,7 @@ def ingest_book(
             ]
 
         # Book summary (1 LLM call)
-        title = file_path.stem.replace("-", " ").replace("_", " ").title()
+        title = _title_from_path(file_path)
         book_summary = summarise_book(book_id, title, chapter_summaries, llm_config=llm_config)
 
     # Build manifest
@@ -278,11 +305,6 @@ def ingest_book(
     logger.info("  Wrote manifest.json")
 
     # Write zero-server navigation files
-    from lib.storage import (
-        write_compact_manifest,
-        write_concept_index,
-        write_navigation_md,
-    )
     write_compact_manifest(manifest)
     logger.info("  Wrote manifest.compact.json")
     write_concept_index(book_id, manifest.concept_index)
@@ -294,7 +316,7 @@ def ingest_book(
         for chunk_ids in section_chunks.values()
     ) if section_chunks else len(list_chunks(book_id))
 
-    title = file_path.stem.replace("-", " ").replace("_", " ").title()
+    title = _title_from_path(file_path)
     catalog_entry = CatalogEntry(
         id=book_id,
         title=title,

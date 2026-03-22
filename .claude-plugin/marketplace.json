@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "agentlib",
-      "description": "Agentic Knowledge Navigation System — efficient AI navigation of books via structured metadata layers. 47% fewer tokens vs raw PDF.",
+      "description": "Agentic Knowledge Navigation System — efficient AI navigation of books via structured metadata layers. Up to 82% fewer tokens vs raw PDF.",
       "source": "./",
       "category": "productivity",
       "author": {

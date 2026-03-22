@@ -9,6 +9,6 @@ If no argument is provided, list all books with their chapter and chunk counts.
 
 If a book ID is provided (`$ARGUMENTS`), show the detailed structure of that book: chapters, sections, concept count, and sample concepts.
 
-Use the AgentLib MCP tools:
-- No args: call `browse_library` and display results as a formatted table
-- With book ID: call `open_book` with that ID and display the chapter structure
+Read directly from the library:
+- No args: Read ~/.claude/plugins/agentlib/library/books/catalog.json and display as a formatted table
+- With book ID: Read ~/.claude/plugins/agentlib/library/books/{book-id}/manifest.compact.json and display the chapter structure
