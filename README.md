@@ -43,28 +43,34 @@ library/
             └── {chunk-id}.md           ← L2
 ```
 
-## Real-World Example
+## Real-World Results
 
-**Question:** "What are the maturity levels for SBOM according to the CycloneDX standard?"
-**Source:** *Authoritative Guide to SBOM* (CycloneDX standard, 20 chapters, 98 chunks)
+### Result 1 — 82% reduction
 
-### AgentLib vs raw PDF
+**Question:** "What specific actor frameworks does the book mention for multiagent communication?"
 
 | Metric | AgentLib | Raw PDF | Reduction |
 |--------|----------|---------|-----------|
-| Content tokens (messages) | 7.8k | 14.7k | **47%** |
-| Total context | 24k | 30k | **20%** |
+| Content tokens | 6.9k | 38.6k | **82%** |
+| Answer quality | Correct — Ray, Orleans, Akka | Correct — Ray, Orleans, Akka | Same |
+| Source citations | Yes (chapter + chunk IDs) | No | — |
+
+**How AgentLib navigated:** skill triggered → `concepts.json` → `manifest.compact.json` → 2 chunks → answer with citations.
+
+**How raw PDF was read:** read TOC → landed on wrong pages → re-read → answer. 38.6k content tokens, multiple wasted reads.
+
+### Result 2 — 47% reduction
+
+**Question:** "What are the maturity levels for SBOM according to the CycloneDX standard?"
+
+| Metric | AgentLib | Raw PDF | Reduction |
+|--------|----------|---------|-----------|
+| Content tokens | 7.8k | 14.7k | **47%** |
 | Answer quality | Correct (5 dimensions table) | Correct (5 dimensions table) | Same |
 
-### How AgentLib navigated (3 file reads)
+**How AgentLib navigated:** `concepts.json` → chunk IDs → `manifest.compact.json` → 2 exact chunks (~700 tokens).
 
-1. `concepts.json` — found "SCVS BOM Maturity Model" → chunk IDs
-2. `manifest.compact.json` — compact manifest (~1.8k tokens)
-3. `chunks/ch10-s03-001.md`, `chunks/ch10-s04-001.md` — exact content (~700 tokens)
-
-### How raw PDF was read
-
-Claude Code read the entire 80-page PDF and scanned for the answer — 14.7k content tokens, no structure, no way to skip irrelevant pages.
+**How raw PDF was read:** read entire 80-page PDF and scanned for the answer — no structure, no way to skip irrelevant pages.
 
 ## Cost simulations
 
