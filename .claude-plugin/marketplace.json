@@ -3,7 +3,7 @@
   "name": "agentlib-marketplace",
   "description": "Agentic Knowledge Navigation System",
   "owner": {
-    "name": "Nadav Barkain",
+    "name": "Nadav Barkai",
     "email": "barkai.nadav@gmail.com"
   },
   "plugins": [
@@ -13,7 +13,7 @@
       "source": "./",
       "category": "productivity",
       "author": {
-        "name": "Nadav Barkain"
+        "name": "Nadav Barkai"
       },
       "homepage": "https://github.com/barkain/agentlib"
     }
