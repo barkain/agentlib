@@ -97,7 +97,7 @@ Without the agent, two direct queries would consume ~30k+ in messages. With it, 
 | Content tokens | 7.8k | 14.7k | **47%** |
 | Answer quality | Correct (5 dimensions table) | Correct (5 dimensions table) | Same |
 
-### Corpus queries — 62% token reduction
+### Corpus queries — 57% token reduction
 
 **Question:** "How does Davidson connect quantum mechanics to general relativity?"
 
