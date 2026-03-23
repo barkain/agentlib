@@ -230,17 +230,15 @@ BOM generation and consumption tools
 
 **User asks:** "What are the maturity levels for SBOM according to the CycloneDX standard?"
 
-Here is the exact sequence Claude follows, defined by the `/knowledge` skill:
+The `/agentlib-knowledge` skill delegates to the `library-researcher` agent, which runs in an isolated context window. All reads happen in the agent — only the synthesized answer returns to the main conversation.
 
-### Step 1: Check catalog (1 read)
+### Step 1: Check what's available (1 read)
 
-Claude reads `~/.claude/plugins/agentlib/library/books/catalog.json`.
-
-Sees `authoritativeguide-to-sbom` with summary mentioning "quality standards" and "Software Bills of Materials" — relevant.
+The agent reads `NAVIGATION.md`, which lists all books and corpora. It sees `authoritativeguide-to-sbom` — relevant.
 
 ### Step 2: Search by concept (1 read)
 
-Claude reads `~/.claude/plugins/agentlib/library/books/authoritativeguide-to-sbom/concepts.json`.
+The agent reads `books/authoritativeguide-to-sbom/concepts.json`.
 
 Scans for "maturity" and finds:
 
@@ -253,13 +251,13 @@ Direct hit. Three unique chunk IDs identified.
 
 ### Step 3: Read chunks (2 reads)
 
-Claude reads:
+The agent reads:
 - `chunks/ch10-s03-001.md` — covers the SCVS BOM Maturity Model: a formal taxonomy of data types possible in a BOM, with complexity levels and evaluation criteria
 - `chunks/ch10-s04-001.md` — covers SBOM Quality as a multidimensional construct with five dimensions: Breadth (SCVS), Depth (SCVS), Lifecycles, Techniques, and Confidence
 
 ### Step 4: Answer with citation
 
-Claude synthesizes an answer from ~700 tokens of chunk content and cites the source:
+The agent synthesizes an answer from ~700 tokens of chunk content and returns it with citations:
 
 > According to the CycloneDX Authoritative Guide to SBOM (ch10-s03, ch10-s04), SBOM maturity is evaluated through the OWASP SCVS BOM Maturity Model, which provides a formal taxonomy of data types possible in a BOM along with the complexity level for supporting each type. The model evaluates three areas: incoming BOM adherence to organizational policy, BOM generation/consumption tool capabilities, and BOM format alignment with requirements. SBOM quality itself is multidimensional, assessed across five dimensions: Breadth (coverage of data types), Depth (detail level), Lifecycles (which SDLC phases produced the BOM), Techniques (approaches for determining component identity), and Confidence (reliability of identity analysis).
 
@@ -273,13 +271,13 @@ Claude synthesizes an answer from ~700 tokens of chunk content and cites the sou
 
 This is a targeted question, but the user wants practical how-to guidance. Claude uses a combination of concept lookup and manifest browsing.
 
-### Step 1: Check catalog (1 read)
+### Step 1: Check what's available (1 read)
 
-Claude reads `catalog.json`. The SBOM guide is relevant.
+The agent reads `NAVIGATION.md`. The SBOM guide is relevant.
 
 ### Step 2: Search by concept (1 read)
 
-Claude reads `~/.claude/plugins/agentlib/library/books/authoritativeguide-to-sbom/concepts.json`.
+The agent reads `books/authoritativeguide-to-sbom/concepts.json`.
 
 Finds:
 
@@ -287,7 +285,7 @@ Finds:
 "CycloneDX Extensions": ["ch20-s01-001", "ch20-s02-001", "ch20-s03-001", "ch20-s04-001"]
 ```
 
-Four chunks in chapter 20 (Extensibility). Claude also optionally checks the manifest to confirm section titles:
+Four chunks in chapter 20 (Extensibility). The agent may also check the manifest to confirm section titles:
 
 ```
 ch20 - Extensibility
@@ -299,14 +297,14 @@ ch20 - Extensibility
 
 ### Step 3: Read selected chunks for detail (2-3 reads)
 
-Claude picks the most relevant sections:
+The agent picks the most relevant sections:
 - `chunks/ch20-s01-001.md` — overview of three extension mechanisms: properties, registered namespaces, and XML extensions; notes on hardened schemas
 - `chunks/ch20-s02-001.md` — how to use CycloneDX properties as name-value pairs, with JSON and XML examples
 - `chunks/ch20-s03-001.md` — registered namespaces with hierarchical naming (e.g., `cdx:gomod:binary`, `cdx:npm:package:bundled`) and the GitHub taxonomy registry
 
 ### Step 4: Answer with citation
 
-Claude provides a structured answer covering the three extension mechanisms, with the JSON/XML property examples from ch20-s02, and links to the CycloneDX Property Taxonomy repository on GitHub for namespace registration.
+The agent returns a structured answer covering the three extension mechanisms, with the JSON/XML property examples from ch20-s02, and links to the CycloneDX Property Taxonomy repository on GitHub for namespace registration.
 
 **Total reads: 5-6** (catalog + concepts + manifest + 2-3 chunks). Total tokens consumed: ~2,500.
 
@@ -323,9 +321,11 @@ Claude provides a structured answer covering the three extension mechanisms, wit
 
 The CycloneDX Authoritative Guide to SBOM PDF is ~80 pages. Pasting it would consume ~50k tokens — wasting budget on irrelevant content like the glossary, references, and chapters unrelated to the question.
 
-AgentLib's structured navigation keeps total consumption to **1,400-2,500 tokens** by letting Claude decide what to read based on a lightweight table of contents and concept index. The trade-off is a few extra reads (tool calls), but each read is small and targeted.
+AgentLib's structured navigation keeps total consumption to **1,400-2,500 tokens** by letting the `library-researcher` agent decide what to read based on a lightweight concept index. The trade-off is a few extra reads (tool calls), but each read is small and targeted.
 
-The key advantage over naive RAG: Claude sees the *structure* of the document (chapter titles, section hierarchy, concept relationships) before deciding what to read. This means it can answer structural questions ("what does CycloneDX cover?") from the manifest alone, without reading any chunks at all.
+Because the agent runs in an **isolated context window**, all navigation reads stay out of the main conversation. Only the synthesized answer (~500-1,000 tokens) returns — keeping the main context clean for follow-up questions.
+
+The key advantage over naive RAG: the agent sees the *structure* of the document (concept mappings, chapter hierarchy) before deciding what to read. This means it can answer structural questions ("what does CycloneDX cover?") from the index alone, without reading any chunks at all.
 
 ---
 
@@ -344,6 +344,6 @@ PDF (~80 pages)
          ├── ch20-s02-001.md
          └── ... (98 chunks total)
 
-Claude reads catalog → picks a path (concept or browse) → reads 2-3 chunks → answers.
-Total: 1,400-2,500 tokens instead of 50,000.
+library-researcher agent reads NAVIGATION.md → concepts.json → 2-3 chunks → returns answer.
+Total: 1,400-2,500 tokens (in agent context), ~500-1k in main conversation.
 ```
