@@ -6,7 +6,7 @@ A concrete example showing how AgentLib ingests a collection of scientific paper
 
 ## 1. The Corpus
 
-**8 papers by Aharon Davidson** covering quantum cosmology, black hole microstates, particle physics unification, and modified gravity theories. Published 2017-2024, sourced from arXiv.
+**8 papers by Prof. Aharon Davidson** covering quantum cosmology, black hole microstates, particle physics unification, and modified gravity theories. Published 2017-2024, sourced from arXiv.
 
 These are dense theoretical physics papers — exactly the kind of content where structured navigation saves massive tokens compared to reading raw PDFs.
 
@@ -15,7 +15,7 @@ These are dense theoretical physics papers — exactly the kind of content where
 ## 2. Ingestion
 
 ```
-/agentlib:agentlib-ingest-corpus ~/Downloads/aharon_davidson_papers/
+/agentlib:agentlib-ingest-corpus aharon_davidson_papers/
 ```
 
 ### What happens
