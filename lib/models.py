@@ -140,3 +140,206 @@ class ParsedSection:
     text: str
     page_start: int | None = None
     page_end: int | None = None
+
+
+# ---------------------------------------------------------------------------
+# Corpus models (scientific paper collections)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PaperMetadata:
+    """Extracted metadata for a single paper."""
+    paper_id: str
+    title: str
+    authors: list[str] = field(default_factory=list)
+    year: int | None = None
+    venue: str = ""
+    abstract: str = ""
+    keywords: list[str] = field(default_factory=list)
+    filename: str = ""
+    page_count: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PaperMetadata:
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2)
+
+    @classmethod
+    def from_json(cls, text: str) -> PaperMetadata:
+        return cls.from_dict(json.loads(text))
+
+
+@dataclass
+class ClusterEntry:
+    """One topic cluster in the corpus catalog."""
+    id: str
+    description: str = ""
+    paper_count: int = 0
+    date_range: list[str] = field(default_factory=list)
+    top_keywords: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ClusterEntry:
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
+@dataclass
+class CorpusCatalog:
+    """L0a -- Corpus catalog with topic clusters."""
+    corpus_id: str
+    corpus_title: str = ""
+    paper_count: int = 0
+    clusters: list[ClusterEntry] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "corpus_id": self.corpus_id,
+            "corpus_title": self.corpus_title,
+            "paper_count": self.paper_count,
+            "clusters": [c.to_dict() for c in self.clusters],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CorpusCatalog:
+        clusters = [ClusterEntry.from_dict(c) for c in data.get("clusters", [])]
+        return cls(
+            corpus_id=data["corpus_id"],
+            corpus_title=data.get("corpus_title", ""),
+            paper_count=data.get("paper_count", 0),
+            clusters=clusters,
+        )
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2)
+
+    @classmethod
+    def from_json(cls, text: str) -> CorpusCatalog:
+        return cls.from_dict(json.loads(text))
+
+
+@dataclass
+class PaperEntry:
+    """One paper in a cluster listing (L0b)."""
+    id: str
+    title: str = ""
+    authors: list[str] = field(default_factory=list)
+    year: int | None = None
+    keywords: list[str] = field(default_factory=list)
+    abstract: str = ""
+    section_count: int = 0
+    chunk_count: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PaperEntry:
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
+@dataclass
+class CitationContext:
+    """A reference to another paper in the corpus."""
+    cites: str = ""
+    context: str = ""
+    relationship: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CitationContext:
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
+@dataclass
+class PaperManifest:
+    """L1 -- Paper manifest (~400-800 tokens)."""
+    paper_id: str
+    sections: list[SectionInfo] = field(default_factory=list)
+    key_findings: list[str] = field(default_factory=list)
+    citation_context: list[CitationContext] = field(default_factory=list)
+    methodology_params: dict[str, str] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "paper_id": self.paper_id,
+            "sections": [asdict(s) for s in self.sections],
+            "key_findings": self.key_findings,
+            "citation_context": [c.to_dict() for c in self.citation_context],
+            "methodology_params": self.methodology_params,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PaperManifest:
+        sections = [SectionInfo(**s) for s in data.get("sections", [])]
+        citations = [CitationContext.from_dict(c) for c in data.get("citation_context", [])]
+        return cls(
+            paper_id=data["paper_id"],
+            sections=sections,
+            key_findings=data.get("key_findings", []),
+            citation_context=citations,
+            methodology_params=data.get("methodology_params", {}),
+        )
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2)
+
+    @classmethod
+    def from_json(cls, text: str) -> PaperManifest:
+        return cls.from_dict(json.loads(text))
+
+
+@dataclass
+class CorpusConceptEntry:
+    """A concept mapped across papers."""
+    papers: list[str] = field(default_factory=list)
+    sections: dict[str, str] = field(default_factory=dict)
+    note: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CorpusConceptEntry:
+        return cls(
+            papers=data.get("papers", []),
+            sections=data.get("sections", {}),
+            note=data.get("note", ""),
+        )
+
+
+@dataclass
+class CorpusConceptIndex:
+    """Ls -- Cross-paper concept index."""
+    corpus_id: str
+    concepts: dict[str, CorpusConceptEntry] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "corpus_id": self.corpus_id,
+            "concepts": {k: v.to_dict() for k, v in self.concepts.items()},
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CorpusConceptIndex:
+        concepts = {
+            k: CorpusConceptEntry.from_dict(v)
+            for k, v in data.get("concepts", {}).items()
+        }
+        return cls(corpus_id=data["corpus_id"], concepts=concepts)
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2)
+
+    @classmethod
+    def from_json(cls, text: str) -> CorpusConceptIndex:
+        return cls.from_dict(json.loads(text))

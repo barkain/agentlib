@@ -37,7 +37,22 @@ Read ~/.claude/plugins/agentlib/library/books/{book-id}/chunks/{chunk-id}.md
 ```
 Each chunk is ~300-500 tokens. Chunks have `prev`/`next` links in frontmatter for adjacent context.
 
+### Corpus (scientific papers)
+Corpora live at `~/.claude/plugins/agentlib/library/corpus/{corpus-id}/`.
+
+**Find relevant papers (2-3 reads):**
+1. `corpus_catalog.json` -- see topic clusters
+2. `clusters/{cluster-id}.json` -- see papers with abstracts
+3. Pick papers based on abstracts
+
+**Read a paper (2 reads):**
+1. `papers/{paper-id}/manifest.compact.json` -- section summaries, key findings
+2. `papers/{paper-id}/chunks/{chunk-id}.md` -- actual content
+
+**Search across papers (1 read):**
+`concept_index.json` -- concept to paper IDs and sections
+
 ### Rules
 - ALWAYS use `manifest.compact.json`, NEVER `manifest.json`
 - Max 4 navigation reads (catalog + manifest + concepts). Then read up to 5 chunks as needed.
-- Cite the book and chunk when answering
+- Cite the book/paper and chunk when answering

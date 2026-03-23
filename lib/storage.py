@@ -5,7 +5,15 @@ import os
 import re
 from pathlib import Path
 
-from lib.models import Catalog, CatalogEntry, Manifest
+from lib.models import (
+    Catalog,
+    CatalogEntry,
+    CorpusCatalog,
+    CorpusConceptIndex,
+    Manifest,
+    PaperManifest,
+    PaperMetadata,
+)
 
 # Strict regex for path component validation: alphanumeric, hyphens, underscores, dots
 _SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
@@ -262,49 +270,249 @@ def write_concept_index(book_id: str, concept_index: dict) -> Path:
 
 def write_navigation_md() -> Path:
     """Write NAVIGATION.md in the library root with current library listing."""
+    import json as _json  # noqa: F811 — local import to avoid top-level json dep
+
     catalog = read_catalog()
     book_lines = []
     for b in catalog.books:
         book_lines.append(
-            f"- **{b.title}** (`{b.id}`) — {b.chapter_count} chapters, "
+            f"- **{b.title}** (`{b.id}`) -- {b.chapter_count} chapters, "
             f"{b.total_chunks} chunks"
         )
 
     books_section = "\n".join(book_lines) if book_lines else "_No books ingested yet._"
 
+    # Build corpus section
+    corpus_lines: list[str] = []
+    corpus_root = _corpus_root()
+    if corpus_root.exists():
+        for cdir in sorted(corpus_root.iterdir()):
+            cat_path = cdir / "corpus_catalog.json"
+            if cat_path.exists():
+                try:
+                    cat_data = _json.loads(cat_path.read_text(encoding="utf-8"))
+                    title = cat_data.get("corpus_title", cdir.name)
+                    pc = cat_data.get("paper_count", 0)
+                    nc = len(cat_data.get("clusters", []))
+                    corpus_lines.append(
+                        f"- **{title}** (`{cdir.name}`) -- {pc} papers, {nc} clusters\n"
+                        f"  Navigate: `corpus/{cdir.name}/corpus_catalog.json`"
+                    )
+                except (ValueError, OSError):
+                    pass
+
+    corpus_section = "\n".join(corpus_lines) if corpus_lines else "_No corpora ingested yet._"
+
     content = (
         "# AgentLib Library\n"
         "\n"
-        "This directory contains preprocessed books for efficient navigation.\n"
+        "This directory contains preprocessed books and paper corpora for efficient navigation.\n"
         "Read this file to understand the structure, then navigate using standard file tools.\n"
         "\n"
         "## How to navigate\n"
         "\n"
-        "### Quick path (know what you need):\n"
-        "1. Read `books/{book-id}/concepts.json` — find chunk IDs for your concept\n"
-        "2. Read `books/{book-id}/chunks/{chunk-id}.md` — get the content\n"
+        "### Books -- Quick path (know what you need):\n"
+        "1. Read `books/{book-id}/concepts.json` -- find chunk IDs for your concept\n"
+        "2. Read `books/{book-id}/chunks/{chunk-id}.md` -- get the content\n"
         "\n"
-        "### Exploration path (browsing):\n"
-        "1. Read `books/catalog.json` — see all available books (~50 tokens/book)\n"
-        "2. Read `books/{book-id}/manifest.compact.json` — see chapters, summaries, concepts (~500-2k tokens)\n"
-        "3. Read `books/{book-id}/chunks/{chunk-id}.md` — get specific content (~300-500 tokens)\n"
+        "### Books -- Exploration path (browsing):\n"
+        "1. Read `books/catalog.json` -- see all available books (~50 tokens/book)\n"
+        "2. Read `books/{book-id}/manifest.compact.json` -- see chapters, summaries, concepts (~500-2k tokens)\n"
+        "3. Read `books/{book-id}/chunks/{chunk-id}.md` -- get specific content (~300-500 tokens)\n"
+        "\n"
+        "### Corpora -- Paper collections:\n"
+        "1. Read `corpus/{corpus-id}/corpus_catalog.json` -- see topic clusters\n"
+        "2. Read `corpus/{corpus-id}/clusters/{cluster-id}.json` -- see papers with abstracts\n"
+        "3. Read `corpus/{corpus-id}/papers/{paper-id}/manifest.compact.json` -- paper structure\n"
+        "4. Read `corpus/{corpus-id}/papers/{paper-id}/chunks/{chunk-id}.md` -- paper content\n"
+        "5. Read `corpus/{corpus-id}/concept_index.json` -- cross-paper concept search\n"
         "\n"
         "## Token budget\n"
         "- catalog.json: ~50 tokens per book\n"
         "- manifest.compact.json: ~500-2000 tokens per book\n"
         "- Each chunk: ~300-500 tokens\n"
         "- concepts.json: ~200-500 tokens\n"
+        "- corpus_catalog.json: ~500-800 tokens\n"
+        "- concept_index.json: ~500-1500 tokens\n"
         "\n"
         "## Rules\n"
-        "- NEVER read the full manifest.json — use manifest.compact.json instead\n"
-        "- NEVER read all chunks — use concepts.json or manifest to find the right ones\n"
-        "- Max 10 chunks per question — if you need more, refine your search\n"
+        "- NEVER read the full manifest.json -- use manifest.compact.json instead\n"
+        "- NEVER read all chunks -- use concepts.json or manifest to find the right ones\n"
+        "- Max 10 chunks per question -- if you need more, refine your search\n"
         "\n"
         "## Current library\n"
+        "\n"
+        "### Books\n"
         f"{books_section}\n"
+        "\n"
+        "### Corpora\n"
+        f"{corpus_section}\n"
     )
 
     path = _data_root() / "NAVIGATION.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
+    return path
+
+
+# ---------------------------------------------------------------------------
+# Corpus storage (scientific paper collections)
+# ---------------------------------------------------------------------------
+
+def _corpus_root() -> Path:
+    return _data_root() / "corpus"
+
+
+def _corpus_dir(corpus_id: str) -> Path:
+    _validate_path_component(corpus_id, "corpus_id")
+    return _safe_join(_corpus_root(), corpus_id)
+
+
+def corpus_exists(corpus_id: str) -> bool:
+    """Check if a corpus directory exists."""
+    _validate_path_component(corpus_id, "corpus_id")
+    return _corpus_dir(corpus_id).is_dir()
+
+
+def list_corpus_papers(corpus_id: str) -> list[str]:
+    """List all paper IDs in a corpus."""
+    papers_dir = _safe_join(_corpus_dir(corpus_id), "papers")
+    if not papers_dir.exists():
+        return []
+    return sorted(d.name for d in papers_dir.iterdir() if d.is_dir())
+
+
+# --- L0a: Corpus Catalog ---
+
+def read_corpus_catalog(corpus_id: str) -> CorpusCatalog | None:
+    """Read corpus_catalog.json. Returns None if not found."""
+    path = _safe_join(_corpus_dir(corpus_id), "corpus_catalog.json")
+    if not path.exists():
+        return None
+    return CorpusCatalog.from_json(path.read_text(encoding="utf-8"))
+
+
+def write_corpus_catalog(catalog: CorpusCatalog) -> Path:
+    """Write corpus_catalog.json to disk."""
+    import json
+    path = _safe_join(_corpus_dir(catalog.corpus_id), "corpus_catalog.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(catalog.to_dict(), indent=2), encoding="utf-8")
+    return path
+
+
+# --- L0b: Cluster Paper Lists ---
+
+def write_cluster_list(corpus_id: str, cluster_id: str, papers_data: list[dict]) -> Path:
+    """Write clusters/{cluster_id}.json."""
+    import json
+    _validate_path_component(cluster_id, "cluster_id")
+    path = _safe_join(_corpus_dir(corpus_id), "clusters", f"{cluster_id}.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {"cluster_id": cluster_id, "papers": papers_data}
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    return path
+
+
+# --- Paper Metadata ---
+
+def read_paper_metadata(corpus_id: str, paper_id: str) -> PaperMetadata | None:
+    """Read papers/{paper_id}/paper.json."""
+    _validate_path_component(paper_id, "paper_id")
+    path = _safe_join(_corpus_dir(corpus_id), "papers", paper_id, "paper.json")
+    if not path.exists():
+        return None
+    return PaperMetadata.from_json(path.read_text(encoding="utf-8"))
+
+
+def write_paper_metadata(corpus_id: str, metadata: PaperMetadata) -> Path:
+    """Write papers/{paper_id}/paper.json."""
+    import json
+    _validate_path_component(metadata.paper_id, "paper_id")
+    path = _safe_join(
+        _corpus_dir(corpus_id), "papers", metadata.paper_id, "paper.json",
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(metadata.to_dict(), indent=2), encoding="utf-8")
+    return path
+
+
+# --- Paper Manifest (L1) ---
+
+def read_paper_manifest(corpus_id: str, paper_id: str) -> PaperManifest | None:
+    """Read papers/{paper_id}/manifest.compact.json."""
+    _validate_path_component(paper_id, "paper_id")
+    path = _safe_join(
+        _corpus_dir(corpus_id), "papers", paper_id, "manifest.compact.json",
+    )
+    if not path.exists():
+        return None
+    return PaperManifest.from_json(path.read_text(encoding="utf-8"))
+
+
+def write_paper_manifest(corpus_id: str, manifest: PaperManifest) -> Path:
+    """Write papers/{paper_id}/manifest.compact.json."""
+    import json
+    _validate_path_component(manifest.paper_id, "paper_id")
+    path = _safe_join(
+        _corpus_dir(corpus_id), "papers", manifest.paper_id, "manifest.compact.json",
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest.to_dict(), indent=2), encoding="utf-8")
+    return path
+
+
+# --- Paper Chunks (L2) ---
+
+def write_paper_chunk(corpus_id: str, paper_id: str, chunk_id: str, content: str) -> Path:
+    """Write papers/{paper_id}/chunks/{chunk_id}.md."""
+    _validate_path_component(paper_id, "paper_id")
+    _validate_path_component(chunk_id, "chunk_id")
+    path = _safe_join(
+        _corpus_dir(corpus_id), "papers", paper_id, "chunks", f"{chunk_id}.md",
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def read_paper_chunk(corpus_id: str, paper_id: str, chunk_id: str) -> str | None:
+    """Read papers/{paper_id}/chunks/{chunk_id}.md."""
+    _validate_path_component(paper_id, "paper_id")
+    _validate_path_component(chunk_id, "chunk_id")
+    path = _safe_join(
+        _corpus_dir(corpus_id), "papers", paper_id, "chunks", f"{chunk_id}.md",
+    )
+    if not path.exists():
+        return None
+    return path.read_text(encoding="utf-8")
+
+
+def list_paper_chunks(corpus_id: str, paper_id: str) -> list[str]:
+    """List all chunk IDs for a paper."""
+    _validate_path_component(paper_id, "paper_id")
+    chunks_dir = _safe_join(
+        _corpus_dir(corpus_id), "papers", paper_id, "chunks",
+    )
+    if not chunks_dir.exists():
+        return []
+    return sorted(p.stem for p in chunks_dir.glob("*.md"))
+
+
+# --- Corpus Concept Index (Ls) ---
+
+def read_corpus_concept_index(corpus_id: str) -> CorpusConceptIndex | None:
+    """Read concept_index.json."""
+    path = _safe_join(_corpus_dir(corpus_id), "concept_index.json")
+    if not path.exists():
+        return None
+    return CorpusConceptIndex.from_json(path.read_text(encoding="utf-8"))
+
+
+def write_corpus_concept_index(corpus_id: str, index: CorpusConceptIndex) -> Path:
+    """Write concept_index.json."""
+    import json
+    path = _safe_join(_corpus_dir(corpus_id), "concept_index.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(index.to_dict(), indent=2), encoding="utf-8")
     return path
