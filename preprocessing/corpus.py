@@ -59,6 +59,7 @@ from lib.models import (
 )
 from lib.parser import parse_pdf
 from lib.storage import (
+    find_paper_by_filename,
     list_paper_chunks,
     read_paper_manifest,
     read_paper_metadata,
@@ -325,12 +326,10 @@ def ingest_corpus(
 
         logger.info("  Processing: %s", pdf_path.name)
 
-        # Try to read existing metadata
-        temp_id = _slugify_corpus(pdf_path.stem)
+        # Try to read existing metadata by matching original filename
         existing_meta = None
         if not force:
-            # Check if we already have metadata for this file
-            existing_meta = read_paper_metadata(corpus_id, temp_id)
+            existing_meta = find_paper_by_filename(corpus_id, pdf_path.name)
 
         if existing_meta and not force:
             logger.info("    Using cached metadata for %s", existing_meta.paper_id)
@@ -418,6 +417,7 @@ def ingest_corpus(
     # --- Stage 4: Summarise ---
     logger.info("Stage 4/7: Summarising papers...")
     paper_summaries: dict[str, tuple[PaperMetadata, list[ChapterSummary]]] = {}
+    freshly_summarised: set[str] = set()  # Track which papers were newly summarised
 
     for meta in all_metadata:
         paper_id = meta.paper_id
@@ -426,7 +426,8 @@ def ingest_corpus(
         existing_manifest = read_paper_manifest(corpus_id, paper_id) if not force else None
         if existing_manifest and not force:
             logger.info("  %s: manifest exists, skipping", paper_id)
-            # Reconstruct ChapterSummary from manifest
+            # Reconstruct ChapterSummary from manifest — key_concepts not available
+            # but that's OK since we skip concept index rebuild for cached papers
             ch_summaries = [
                 ChapterSummary(
                     chapter_id=sec.id,
@@ -503,6 +504,7 @@ def ingest_corpus(
         )
         write_paper_manifest(corpus_id, manifest)
         paper_summaries[paper_id] = (meta, chapter_summaries)
+        freshly_summarised.add(paper_id)
         logger.info("  %s: wrote manifest (%d sections, %d findings)",
                      paper_id, len(section_infos), len(key_findings))
 
@@ -554,12 +556,23 @@ def ingest_corpus(
 
     # --- Stage 7: Build Concept Index ---
     logger.info("Stage 7/7: Building concept index...")
-    if paper_summaries:
-        concept_index = _build_corpus_concept_index(
-            corpus_id, paper_summaries, llm_config,
+    if not freshly_summarised and not force:
+        logger.info("  All papers from cache, keeping existing concept_index.json")
+    elif paper_summaries:
+        # Only include freshly summarised papers (with key_concepts) in rebuild,
+        # or all papers if --force
+        summaries_for_index = (
+            paper_summaries if force
+            else {pid: v for pid, v in paper_summaries.items() if pid in freshly_summarised}
         )
-        write_corpus_concept_index(corpus_id, concept_index)
-        logger.info("  Wrote concept_index.json (%d concepts)", len(concept_index.concepts))
+        if summaries_for_index:
+            concept_index = _build_corpus_concept_index(
+                corpus_id, summaries_for_index, llm_config,
+            )
+            write_corpus_concept_index(corpus_id, concept_index)
+            logger.info("  Wrote concept_index.json (%d concepts)", len(concept_index.concepts))
+        else:
+            logger.info("  No new papers to index, keeping existing concept_index.json")
     else:
         logger.warning("  No paper summaries available, skipping concept index")
 

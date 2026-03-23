@@ -425,6 +425,19 @@ def read_paper_metadata(corpus_id: str, paper_id: str) -> PaperMetadata | None:
     return PaperMetadata.from_json(path.read_text(encoding="utf-8"))
 
 
+def find_paper_by_filename(corpus_id: str, filename: str) -> PaperMetadata | None:
+    """Find cached paper metadata by original filename."""
+    papers_dir = _safe_join(_corpus_dir(corpus_id), "papers")
+    if not papers_dir.exists():
+        return None
+    for paper_dir in papers_dir.iterdir():
+        if paper_dir.is_dir():
+            meta = read_paper_metadata(corpus_id, paper_dir.name)
+            if meta and meta.filename == filename:
+                return meta
+    return None
+
+
 def write_paper_metadata(corpus_id: str, metadata: PaperMetadata) -> Path:
     """Write papers/{paper_id}/paper.json."""
     import json
