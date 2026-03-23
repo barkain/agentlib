@@ -179,6 +179,11 @@ AgentLib supports 5 LLM providers for ingestion and summarization (auto-detected
 
 Set `AGENTLIB_PROVIDER` to override auto-detection.
 
+## Examples
+
+- [Book walkthrough](examples/sbom-walkthrough.md) — ingesting the OWASP CycloneDX SBOM guide and querying it
+- [Corpus walkthrough](examples/corpus-walkthrough.md) — ingesting 8 physics papers by Prof. Aharon Davidson and querying specific formulas
+
 ## Development
 
 ```bash
