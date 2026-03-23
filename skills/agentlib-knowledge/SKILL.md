@@ -1,11 +1,11 @@
 ---
-name: knowledge
+name: agentlib-knowledge
 description: "Knowledge library navigation. Trigger on: research questions, book references, domain knowledge queries, 'according to', 'what does the book say', 'look up', 'find in', or any question that may be answered by ingested books/documents/papers. Do NOT trigger on: code editing, git operations, file management, web browsing requests."
 ---
 
 ## AgentLib — Knowledge Library
 
-**This skill activates automatically** for research/knowledge questions. Users can also invoke it explicitly with `/knowledge <question>` to always consult the library.
+**This skill activates automatically** for research/knowledge questions. Users can also invoke it explicitly with `/agentlib-knowledge <question>` to always consult the library.
 
 You have a preprocessed knowledge library at `~/.claude/plugins/agentlib/library/`.
 
