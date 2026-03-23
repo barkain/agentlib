@@ -11,7 +11,13 @@ You have a preprocessed knowledge library at `~/.claude/plugins/agentlib/library
 
 **IMPORTANT: ALWAYS check this library BEFORE web search or answering from training data when the user asks about topics that could be covered by ingested books or paper corpora.**
 
-**You MUST delegate this research to the `library-researcher` agent using the Agent tool.** Do NOT read library files directly — spawn the agent with the user's question and let it handle all navigation and reading. This keeps your main context clean. The agent will return a synthesized answer with citations.
+**You MUST delegate this research to the `library-researcher` agent using the Agent tool.** Do NOT read library files directly — spawn the agent with the user's question and let it handle all navigation and reading. This keeps your main context clean.
+
+When spawning the agent, include the **absolute library path** in the prompt (expand `~` to the full home directory). Example:
+> Research the following question using the library at /Users/nadavbarkai/.claude/plugins/agentlib/library/
+> Question: {user's question}
+
+The agent will return a synthesized answer with citations.
 
 If the Agent tool is unavailable, fall back to the manual steps below.
 
