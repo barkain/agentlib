@@ -1,6 +1,6 @@
 ---
 name: knowledge
-description: "Knowledge library navigation. Trigger on: research questions, book references, domain knowledge queries, 'according to', 'what does the book say', 'look up', 'find in', or any question that may be answered by ingested books/documents. Do NOT trigger on: code editing, git operations, file management, web browsing requests."
+description: "Knowledge library navigation. Trigger on: research questions, book references, domain knowledge queries, 'according to', 'what does the book say', 'look up', 'find in', or any question that may be answered by ingested books/documents/papers. Do NOT trigger on: code editing, git operations, file management, web browsing requests."
 ---
 
 ## AgentLib — Knowledge Library
@@ -9,50 +9,57 @@ description: "Knowledge library navigation. Trigger on: research questions, book
 
 You have a preprocessed knowledge library at `~/.claude/plugins/agentlib/library/`.
 
-**IMPORTANT: ALWAYS check this library BEFORE web search or answering from training data when the user asks about topics that could be covered by ingested books.**
+**IMPORTANT: ALWAYS check this library BEFORE web search or answering from training data when the user asks about topics that could be covered by ingested books or paper corpora.**
 
-### Step 1: Check what books are available
+### Step 1: Check what's available
 ```
-Read ~/.claude/plugins/agentlib/library/books/catalog.json
+Read ~/.claude/plugins/agentlib/library/NAVIGATION.md
 ```
-If no book covers the topic, proceed with other tools. If a book is relevant, continue:
+This lists ALL books AND paper corpora. Check BOTH sections — if a book OR corpus covers the topic, continue with the appropriate path below. Only proceed with other tools if nothing is relevant.
 
-### Step 2: Find the right content (pick one)
+---
 
-**Option A — Search by concept (fastest, 2 reads):**
+### Path A: Books
+
+**Find content (pick one):**
+
+**A1 — Search by concept (fastest, 2 reads):**
 ```
 Read ~/.claude/plugins/agentlib/library/books/{book-id}/concepts.json
 ```
 Find your concept → get chunk IDs → go to Step 3.
 
-**Option B — Browse chapters (3 reads):**
+**A2 — Browse chapters (3 reads):**
 ```
 Read ~/.claude/plugins/agentlib/library/books/{book-id}/manifest.compact.json
 ```
 Find relevant chapter/section → note chunk IDs → go to Step 3.
 
+---
+
+### Path B: Corpora (scientific papers)
+
+**B1 — Search by concept across all papers (fastest, 1 read):**
+```
+Read ~/.claude/plugins/agentlib/library/corpus/{corpus-id}/concept_index.json
+```
+Find your concept → get paper IDs and chunk IDs → go to Step 3.
+
+**B2 — Browse by topic cluster (2-3 reads):**
+1. `corpus_catalog.json` — see topic clusters
+2. `clusters/{cluster-id}.json` — see papers with abstracts
+3. Pick papers → read `papers/{paper-id}/manifest.compact.json`
+
+---
+
 ### Step 3: Read the content
 ```
 Read ~/.claude/plugins/agentlib/library/books/{book-id}/chunks/{chunk-id}.md
+Read ~/.claude/plugins/agentlib/library/corpus/{corpus-id}/papers/{paper-id}/chunks/{chunk-id}.md
 ```
-Each chunk is ~300-500 tokens. Chunks have `prev`/`next` links in frontmatter for adjacent context.
-
-### Corpus (scientific papers)
-Corpora live at `~/.claude/plugins/agentlib/library/corpus/{corpus-id}/`.
-
-**Find relevant papers (2-3 reads):**
-1. `corpus_catalog.json` -- see topic clusters
-2. `clusters/{cluster-id}.json` -- see papers with abstracts
-3. Pick papers based on abstracts
-
-**Read a paper (2 reads):**
-1. `papers/{paper-id}/manifest.compact.json` -- section summaries, key findings
-2. `papers/{paper-id}/chunks/{chunk-id}.md` -- actual content
-
-**Search across papers (1 read):**
-`concept_index.json` -- concept to paper IDs and sections
+Each chunk is ~300-500 tokens. Read up to 5 chunks per question. Chunks have `prev`/`next` links for adjacent context.
 
 ### Rules
 - ALWAYS use `manifest.compact.json`, NEVER `manifest.json`
-- Max 4 navigation reads (catalog + manifest + concepts). Then read up to 5 chunks as needed.
-- Cite the book/paper and chunk when answering
+- Max 4 navigation reads, then up to 5 content chunks
+- Cite the book/paper and chunk ID when answering
