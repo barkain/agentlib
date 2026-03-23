@@ -12,19 +12,20 @@ AgentLib gives agents a map.
 
 ## How it works
 
-AgentLib has two parts:
+AgentLib has three parts:
 
-1. **Ingestion pipeline** — preprocesses books, papers, and databases into small, self-contained chunks with lightweight metadata at multiple layers.
-2. **Universal navigation skill** — a single skill (`knowledge`) that teaches the agent to read cheap metadata first, then drill into specific chunks.
+1. **Ingestion pipelines** — preprocess books, scientific paper corpora, and databases into small, self-contained chunks with lightweight metadata at multiple layers.
+2. **Universal navigation skill** (`agentlib-knowledge`) — teaches the agent to read cheap metadata first, then drill into specific chunks.
+3. **Research agent** (`library-researcher`) — runs in an isolated context to keep the main conversation clean. All navigation and chunk reading happens in the agent's context; only a synthesized answer returns.
 
 No MCP server required. No tool calls. The agent reads preprocessed files directly from `~/.claude/plugins/agentlib/library/`.
 
 ### Three metadata layers
 
 ```
-L0  "What exists?"       →  catalog: ~50 tokens per book          (cheap)
-L1  "What's inside?"     →  manifest: structure, summaries, concepts   (moderate)
-L2  "Give me the content" →  small self-contained chunks, 300-500 tok  (expensive)
+L0  "What exists?"       →  catalog/NAVIGATION.md: ~50 tokens per book   (cheap)
+L1  "What's inside?"     →  manifest: structure, summaries, concepts      (moderate)
+L2  "Give me the content" →  small self-contained chunks, 300-500 tok     (expensive)
 ```
 
 Plus a **concept index** shortcut (Ls) that jumps directly to relevant chunks when the agent already knows what it's looking for.
@@ -33,19 +34,53 @@ Plus a **concept index** shortcut (Ls) that jumps directly to relevant chunks wh
 
 ```
 library/
-├── NAVIGATION.md
-└── books/
-    ├── catalog.json                    ← L0
-    └── {book-id}/
-        ├── manifest.compact.json       ← L1
-        ├── concepts.json               ← Ls
-        └── chunks/
-            └── {chunk-id}.md           ← L2
+├── NAVIGATION.md                          ← Start here — index of everything
+├── books/
+│   ├── catalog.json                       ← L0
+│   └── {book-id}/
+│       ├── manifest.compact.json          ← L1
+│       ├── concepts.json                  ← Ls
+│       └── chunks/
+│           └── {chunk-id}.md              ← L2
+└── corpus/
+    └── {corpus-id}/
+        ├── corpus_catalog.json            ← L0 (topic clusters)
+        ├── concept_index.json             ← Ls (cross-paper concepts)
+        ├── clusters/{cluster-id}.json     ← L0b (papers per cluster)
+        └── papers/{paper-id}/
+            ├── manifest.compact.json      ← L1
+            └── chunks/{chunk-id}.md       ← L2
 ```
 
-## Real-World Results
+## Benchmarks
 
-### Actor Frameworks Query — 82% reduction
+### Agent delegation — context-efficient research
+
+The `library-researcher` agent runs navigation in an isolated context window. Only the synthesized answer returns to the main conversation, keeping it clean for follow-up questions.
+
+**Query: "What is the dimensionless constant η in Davidson's Planck area formula?"**
+
+| Metric | AgentLib (agent) | AgentLib (direct) | Raw PDFs |
+|--------|-----------------|-------------------|----------|
+| Main context | **19k (9%)** | 30k (15%) | 19k (9%) |
+| Hidden agent tokens | 13.6k | — | 60.2k |
+| **Total tokens** | **~33k** | ~30k | **~79k** |
+| Time | **32s** | 38s | 1m 9s |
+| Correct answer | Yes | Yes | Yes |
+
+The agent approach uses **58% fewer total tokens** than raw PDF reading, and keeps the main context at just **3.1k messages** — meaning you can ask many research questions in a single session without filling up the context window.
+
+**Multi-query session (2 questions in one session):**
+
+| Query | Agent tokens | Main context added |
+|-------|-------------|-------------------|
+| Davidson η constant (corpus) | 13.6k | ~3.1k |
+| Prompt injection defenses (book) | 20.5k | ~4.1k |
+| **Total** | **34.1k** | **7.2k** |
+
+Without the agent, two direct queries would consume ~30k+ in messages. With it, only 7.2k.
+
+### Book queries — 47-82% token reduction
 
 **Question:** "What specific actor frameworks does the book mention for multiagent communication?"
 
@@ -55,12 +90,6 @@ library/
 | Answer quality | Correct — Ray, Orleans, Akka | Correct — Ray, Orleans, Akka | Same |
 | Source citations | Yes (chapter + chunk IDs) | No | — |
 
-**How AgentLib navigated:** skill triggered → `concepts.json` → `manifest.compact.json` → 2 chunks → answer with citations.
-
-**How raw PDF was read:** read TOC → landed on wrong pages → re-read → answer. 38.6k content tokens, multiple wasted reads.
-
-### SBOM Maturity Levels Query — 47% reduction
-
 **Question:** "What are the maturity levels for SBOM according to the CycloneDX standard?"
 
 | Metric | AgentLib | Raw PDF | Reduction |
@@ -68,11 +97,17 @@ library/
 | Content tokens | 7.8k | 14.7k | **47%** |
 | Answer quality | Correct (5 dimensions table) | Correct (5 dimensions table) | Same |
 
-**How AgentLib navigated:** `concepts.json` → chunk IDs → `manifest.compact.json` → 2 exact chunks (~700 tokens).
+### Corpus queries — 62% token reduction
 
-**How raw PDF was read:** read entire 80-page PDF and scanned for the answer — no structure, no way to skip irrelevant pages.
+**Question:** "How does Davidson connect quantum mechanics to general relativity?"
 
-## Cost simulations
+| Metric | AgentLib | Raw PDFs | Reduction |
+|--------|----------|----------|-----------|
+| Total tokens | 36k | ~83k | **57%** |
+| Time | 43s | 1m 56s | **2.7x faster** |
+| Answer quality | 3 approaches with citations | 4 approaches | Same |
+
+### Cost simulations
 
 Simulated on realistic workloads (15-book library, 487-paper corpus, 80-table database):
 
@@ -105,6 +140,11 @@ claude --plugin-dir ./agentlib
 /agentlib:agentlib-ingest-book ~/books/owasp-guide.pdf
 ```
 
+### Ingest a paper corpus
+```bash
+/agentlib:agentlib-ingest-corpus ~/papers/my-research-papers/
+```
+
 ### Configure API key
 ```bash
 /agentlib:agentlib-configure set-key <your-api-key>
@@ -120,12 +160,10 @@ claude --plugin-dir ./agentlib
 **Auto-trigger** — just ask naturally. The skill activates when it detects research/knowledge questions:
 > "What specific actor frameworks does the book mention for multiagent communication?"
 
-**Explicit invocation** — prefix with `/knowledge` when you want the book's answer, not Claude's training data:
-> /knowledge What defensive techniques protect against prompt injection?
+**Explicit invocation** — prefix with `/agentlib-knowledge` when you want the library's answer, not Claude's training data:
+> /agentlib-knowledge What defensive techniques protect against prompt injection?
 
-Use explicit invocation when Claude might already know the answer but you want the book's specific take.
-
-The skill teaches the agent to read `catalog.json` or `concepts.json` first (cheap), then drill into specific chunks (expensive) — no server process, no tool overhead.
+The skill delegates to the `library-researcher` agent, which navigates `NAVIGATION.md` → concept indexes → specific chunks in an isolated context. Only the synthesized answer with citations returns to your conversation.
 
 ## LLM Providers
 

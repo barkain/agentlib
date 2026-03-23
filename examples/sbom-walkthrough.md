@@ -230,7 +230,7 @@ BOM generation and consumption tools
 
 **User asks:** "What are the maturity levels for SBOM according to the CycloneDX standard?"
 
-Here is the exact sequence Claude follows, defined by the `/knowledge` skill:
+The `/agentlib-knowledge` skill delegates to the `library-researcher` agent, which runs in an isolated context. Here is the navigation sequence:
 
 ### Step 1: Check catalog (1 read)
 
