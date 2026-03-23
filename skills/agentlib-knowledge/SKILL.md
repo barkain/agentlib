@@ -11,9 +11,13 @@ You have a preprocessed knowledge library at `~/.claude/plugins/agentlib/library
 
 **IMPORTANT: ALWAYS check this library BEFORE web search or answering from training data when the user asks about topics that could be covered by ingested books or paper corpora.**
 
-**Prefer delegating to the `agentlib:library-researcher` agent** — it runs in an isolated context, keeping your main conversation clean. Only navigate directly if you need to integrate findings with other ongoing work in this conversation.
+**You MUST delegate this research to the `library-researcher` agent using the Agent tool.** Do NOT read library files directly — spawn the agent with the user's question and let it handle all navigation and reading. This keeps your main context clean. The agent will return a synthesized answer with citations.
 
-### Step 1: Check what's available
+If the Agent tool is unavailable, fall back to the manual steps below.
+
+### Manual fallback (only if agent delegation fails)
+
+#### Step 1: Check what's available
 ```
 Read ~/.claude/plugins/agentlib/library/NAVIGATION.md
 ```
