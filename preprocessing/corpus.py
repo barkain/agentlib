@@ -247,11 +247,12 @@ def _build_corpus_concept_index(
 {papers_text}
 </papers>
 
-Create a concept index mapping key concepts to papers and sections. Include 15-40 concepts that appear across multiple papers.
+Create a concept index mapping key concepts to papers and sections. Include 15-40 concepts that appear across multiple papers. For each concept, include 2-3 aliases: abbreviations, acronyms, or alternative phrasings someone might search for.
 
 Respond with ONLY valid JSON:
 {{
   "concept_name": {{
+    "aliases": ["abbreviation", "synonym"],
     "papers": ["paper-id-1", "paper-id-2"],
     "sections": {{"paper-id-1": "ch02", "paper-id-2": "ch03"}},
     "note": "brief context"
@@ -268,6 +269,7 @@ Respond with ONLY valid JSON:
                 papers=entry_data.get("papers", []),
                 sections=entry_data.get("sections", {}),
                 note=entry_data.get("note", ""),
+                aliases=entry_data.get("aliases", []),
             )
 
     return CorpusConceptIndex(corpus_id=corpus_id, concepts=concepts)

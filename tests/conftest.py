@@ -72,6 +72,12 @@ def sample_manifest() -> Manifest:
         concept_index={
             "unit testing": [ConceptEntry(ch="ch01", sec="ch01-s01", chunks=["ch01-s01-001"])],
             "mocking": [ConceptEntry(ch="ch02", sec="ch02-s01", chunks=["ch02-s01-001"])],
+            "retrieval augmented generation": [
+                ConceptEntry(
+                    ch="ch01", sec="ch01-s01", chunks=["ch01-s01-002"],
+                    aliases=["RAG", "RAG pipeline"],
+                ),
+            ],
         },
     )
 

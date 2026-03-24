@@ -81,13 +81,15 @@ class TraceMetrics:
     wrong_reads: int = 0
     redundant_reads: int = 0
     wall_clock_seconds: float = 0.0
+    concept_search_hits: int = 0
+    concept_search_misses: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TraceMetrics:
-        return cls(**data)
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
 @dataclass

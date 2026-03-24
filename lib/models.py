@@ -74,6 +74,7 @@ class ConceptEntry:
     ch: str
     sec: str
     chunks: list[str] = field(default_factory=list)
+    aliases: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -304,6 +305,7 @@ class CorpusConceptEntry:
     papers: list[str] = field(default_factory=list)
     sections: dict[str, str] = field(default_factory=dict)
     note: str = ""
+    aliases: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -314,6 +316,7 @@ class CorpusConceptEntry:
             papers=data.get("papers", []),
             sections=data.get("sections", {}),
             note=data.get("note", ""),
+            aliases=data.get("aliases", []),
         )
 
 

@@ -36,6 +36,7 @@ class ConceptMapping:
     ch: str
     sec: str
     chunks: list[str] = field(default_factory=list)
+    aliases: list[str] = field(default_factory=list)
 
 
 def _get_config(llm_config: LLMConfig | None) -> LLMConfig:
@@ -187,16 +188,22 @@ Given these chapter summaries for book "{book_id}", create a unified concept ind
 {chapters_text}
 </book_content>
 
-Create a concept index that maps key concepts to their locations. Each concept should appear with all relevant chapters, sections, and chunks where it's discussed.
+Create a concept index that maps key concepts to their locations. Each concept should appear with all relevant chapters, sections, and chunks where it's discussed. For each concept, include 2-3 aliases: abbreviations, acronyms, or alternative phrasings someone might search for.
 
 Respond with ONLY valid JSON in this exact format:
 {{
-  "concept_name_1": [
-    {{"ch": "ch01", "sec": "ch01-s01", "chunks": ["ch01-s01-001", "ch01-s01-002"]}}
-  ],
-  "concept_name_2": [
-    {{"ch": "ch02", "sec": "ch02-s03", "chunks": ["ch02-s03-001"]}}
-  ]
+  "concept_name_1": {{
+    "aliases": ["abbreviation", "synonym"],
+    "locations": [
+      {{"ch": "ch01", "sec": "ch01-s01", "chunks": ["ch01-s01-001", "ch01-s01-002"]}}
+    ]
+  }},
+  "concept_name_2": {{
+    "aliases": ["alt_name"],
+    "locations": [
+      {{"ch": "ch02", "sec": "ch02-s03", "chunks": ["ch02-s03-001"]}}
+    ]
+  }}
 }}
 
 Include 20-50 concepts. Use specific, searchable terms. Merge similar concepts."""
@@ -205,13 +212,24 @@ Include 20-50 concepts. Use specific, searchable terms. Merge similar concepts."
     data = _parse_json(result_text)
 
     concept_index: dict[str, list[ConceptMapping]] = {}
-    for concept, entries in data.items():
+    for concept, value in data.items():
+        # New format: {"aliases": [...], "locations": [...]}
+        if isinstance(value, dict) and "locations" in value:
+            aliases = value.get("aliases", [])
+            entries = value["locations"]
+        # Old format: [{"ch": ..., "sec": ..., "chunks": [...]}]
+        elif isinstance(value, list):
+            aliases = []
+            entries = value
+        else:
+            continue
         concept_index[concept] = [
             ConceptMapping(
                 concept=concept,
                 ch=e.get("ch", ""),
                 sec=e.get("sec", ""),
                 chunks=e.get("chunks", []),
+                aliases=aliases,
             )
             for e in entries
         ]
