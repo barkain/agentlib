@@ -252,13 +252,18 @@ def write_compact_manifest(manifest: Manifest) -> Path:
 
 
 def write_concept_index(book_id: str, concept_index: dict) -> Path:
-    """Write a flat concept -> chunk_ids lookup file."""
+    """Write a concept index file with aliases for file-based navigation.
+
+    Output format: {concept_name: {"chunks": [...], "aliases": [...]}}
+    Falls back to {concept_name: {"chunks": [...]}} when no aliases exist.
+    """
     import json
 
     _validate_path_component(book_id, "book_id")
-    flat: dict[str, list[str]] = {}
+    flat: dict[str, dict[str, list[str]]] = {}
     for concept, entries in concept_index.items():
         chunk_ids: list[str] = []
+        aliases: list[str] = []
         for entry in entries:
             # Duck-type: callers pass ConceptEntry objects (with .chunks attr)
             # or dicts (from deserialized JSON). Normalizing callers is out of
@@ -267,10 +272,18 @@ def write_concept_index(book_id: str, concept_index: dict) -> Path:
                 chunk_ids.extend(entry.chunks)
             elif isinstance(entry, dict):
                 chunk_ids.extend(entry.get("chunks", []))
-        flat[concept] = chunk_ids
-
-    # Filter out concepts with no chunks
-    flat = {k: v for k, v in flat.items() if v}
+            # Collect aliases
+            if hasattr(entry, "aliases"):
+                aliases.extend(entry.aliases)
+            elif isinstance(entry, dict):
+                aliases.extend(entry.get("aliases", []))
+        if chunk_ids:
+            entry_data: dict[str, list[str]] = {"chunks": chunk_ids}
+            # Deduplicate aliases
+            unique_aliases = list(dict.fromkeys(aliases))
+            if unique_aliases:
+                entry_data["aliases"] = unique_aliases
+            flat[concept] = entry_data
 
     path = _safe_join(_books_root(), book_id, "concepts.json")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -322,7 +335,7 @@ def write_navigation_md() -> Path:
         "## How to navigate\n"
         "\n"
         "### Books -- Quick path (know what you need):\n"
-        "1. Read `books/{book-id}/concepts.json` -- find chunk IDs for your concept\n"
+        "1. Read `books/{book-id}/concepts.json` -- find chunk IDs for your concept (check aliases too)\n"
         "2. Read `books/{book-id}/chunks/{chunk-id}.md` -- get the content\n"
         "\n"
         "### Books -- Exploration path (browsing):\n"

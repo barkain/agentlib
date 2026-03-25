@@ -19,6 +19,8 @@ Read `{library}/NAVIGATION.md`. Identify which books or corpora are relevant.
 - Books: `{library}/books/{book-id}/concepts.json`
 - Corpora: `{library}/corpus/{corpus-id}/concept_index.json`
 
+Each concept has `"chunks"` (list of chunk IDs) and optionally `"aliases"` (alternative names, abbreviations, acronyms). When scanning for your topic, check BOTH the concept name AND its aliases — your search term may match an alias rather than the primary name.
+
 If concepts.json has a match → note chunk IDs → go to Step 3.
 
 **If no match in concepts**, use Grep on chunks directory:
