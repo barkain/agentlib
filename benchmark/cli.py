@@ -119,6 +119,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 def cmd_score(args: argparse.Namespace) -> None:
     """Score existing traces with LLM judge."""
+    from benchmark.scoring.concept_hits import classify_trace as classify_concept_hits
     from benchmark.scoring.judge import LLMJudge
     from benchmark.scoring.wrong_reads import ReadClassifier
 
@@ -155,6 +156,9 @@ def cmd_score(args: argparse.Namespace) -> None:
 
         # Classify reads
         classifier.classify_trace(trace)
+
+        # Classify concept search hits/misses
+        classify_concept_hits(trace)
 
         # Save back
         trace.save(path)

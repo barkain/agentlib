@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lib.models import Catalog, CatalogEntry, Manifest
+from lib.models import Catalog, CatalogEntry, ConceptEntry, Manifest
 from lib.storage import (
     read_catalog,
     read_chunk,
@@ -127,3 +127,28 @@ class TestSearchConcepts:
 
         results = search_concepts("mocking", book_id="test-book")
         assert len(results) > 0
+
+    def test_search_by_alias(self, tmp_data_dir: Path, sample_manifest: Manifest) -> None:
+        """Searching 'RAG' should find 'retrieval augmented generation' via alias."""
+        write_manifest(sample_manifest)
+        update_catalog_entry(CatalogEntry(id="test-book", title="Test"))
+
+        results = search_concepts("RAG")
+        assert len(results) > 0
+        assert any("retrieval augmented generation" in k for k in results)
+
+    def test_backward_compat_no_aliases(self, tmp_data_dir: Path) -> None:
+        """Manifests without aliases field should deserialize cleanly."""
+        manifest = Manifest(
+            book_id="old-book",
+            chapters=[],
+            concept_index={
+                "testing": [ConceptEntry(ch="ch01", sec="ch01-s01", chunks=["ch01-s01-001"])],
+            },
+        )
+        write_manifest(manifest)
+        loaded = read_manifest("old-book")
+        assert loaded is not None
+        assert loaded.concept_index["testing"][0].aliases == []
+
+

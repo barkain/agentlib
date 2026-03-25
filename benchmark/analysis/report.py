@@ -54,6 +54,8 @@ def generate_summary(traces: list[Trace]) -> dict[str, Any]:
                 metric_arrays["total_tool_calls"][cond].append(_median_metric(ts, "total_tool_calls"))
                 metric_arrays["wrong_reads"][cond].append(_median_metric(ts, "wrong_reads"))
                 metric_arrays["redundant_reads"][cond].append(_median_metric(ts, "redundant_reads"))
+                metric_arrays["concept_search_hits"][cond].append(_median_metric(ts, "concept_search_hits"))
+                metric_arrays["concept_search_misses"][cond].append(_median_metric(ts, "concept_search_misses"))
                 metric_arrays["accuracy"][cond].append(_median_accuracy(ts))
 
     # Overall statistics
@@ -64,6 +66,10 @@ def generate_summary(traces: list[Trace]) -> dict[str, Any]:
         accuracy = metric_arrays["accuracy"].get(cond, [])
         wrong = metric_arrays["wrong_reads"].get(cond, [])
         redundant = metric_arrays["redundant_reads"].get(cond, [])
+        concept_hits = metric_arrays["concept_search_hits"].get(cond, [])
+        concept_misses = metric_arrays["concept_search_misses"].get(cond, [])
+        total_searches = sum(concept_hits) + sum(concept_misses)
+        hit_rate = sum(concept_hits) / total_searches if total_searches > 0 else 0.0
 
         overall[cond] = {
             "median_tokens": round(statistics.median(tokens), 1) if tokens else 0,
@@ -71,6 +77,8 @@ def generate_summary(traces: list[Trace]) -> dict[str, Any]:
             "mean_accuracy": round(statistics.mean(accuracy), 3) if accuracy else 0,
             "mean_wrong_reads": round(statistics.mean(wrong), 2) if wrong else 0,
             "mean_redundant_reads": round(statistics.mean(redundant), 2) if redundant else 0,
+            "concept_search_hit_rate": round(hit_rate, 3),
+            "concept_search_total": int(total_searches),
         }
 
     # Token reduction calculations
@@ -192,12 +200,15 @@ def save_report(summary: dict[str, Any], output_dir: Path) -> None:
     md_lines = ["# AgentLib Benchmark Report\n"]
 
     md_lines.append("## Overall Results\n")
-    md_lines.append("| Condition | Median Tokens | Median Calls | Accuracy | Wrong Reads |")
-    md_lines.append("|-----------|--------------|-------------|----------|-------------|")
+    md_lines.append("| Condition | Median Tokens | Median Calls | Accuracy | Wrong Reads | Ls Hit Rate |")
+    md_lines.append("|-----------|--------------|-------------|----------|-------------|-------------|")
     for cond, stats in summary.get("overall", {}).items():
+        hit_rate = stats.get("concept_search_hit_rate", 0)
+        total = stats.get("concept_search_total", 0)
+        hit_str = f"{hit_rate:.0%} ({total})" if total > 0 else "n/a"
         md_lines.append(
             f"| {cond} | {stats['median_tokens']:,.0f} | {stats['median_calls']:.1f} | "
-            f"{stats['mean_accuracy']:.3f} | {stats['mean_wrong_reads']:.2f} |"
+            f"{stats['mean_accuracy']:.3f} | {stats['mean_wrong_reads']:.2f} | {hit_str} |"
         )
 
     if summary.get("token_reduction"):

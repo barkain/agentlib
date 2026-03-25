@@ -268,7 +268,7 @@ def ingest_book(
         concept_index_raw: dict[str, list[ConceptEntry]] = {}
         for concept, mappings in concept_mappings.items():
             concept_index_raw[concept] = [
-                ConceptEntry(ch=m.ch, sec=m.sec, chunks=m.chunks)
+                ConceptEntry(ch=m.ch, sec=m.sec, chunks=m.chunks, aliases=m.aliases)
                 for m in mappings
             ]
 
