@@ -6,7 +6,6 @@ from pathlib import Path
 
 from lib.models import Catalog, CatalogEntry, ConceptEntry, Manifest
 from lib.storage import (
-    _expand_query,
     read_catalog,
     read_chunk,
     read_chunks,
@@ -138,15 +137,6 @@ class TestSearchConcepts:
         assert len(results) > 0
         assert any("retrieval augmented generation" in k for k in results)
 
-    def test_search_by_static_expansion(self, tmp_data_dir: Path, sample_manifest: Manifest) -> None:
-        """Static expansion should also find concepts via abbreviation -> full form."""
-        write_manifest(sample_manifest)
-        update_catalog_entry(CatalogEntry(id="test-book", title="Test"))
-
-        # "retrieval augmented generation" concept should be found via "rag" expansion
-        results = search_concepts("rag")
-        assert len(results) > 0
-
     def test_backward_compat_no_aliases(self, tmp_data_dir: Path) -> None:
         """Manifests without aliases field should deserialize cleanly."""
         manifest = Manifest(
@@ -162,21 +152,3 @@ class TestSearchConcepts:
         assert loaded.concept_index["testing"][0].aliases == []
 
 
-class TestExpandQuery:
-    def test_expand_abbreviation(self) -> None:
-        result = _expand_query("RAG")
-        assert "rag" in result
-        assert "retrieval augmented generation" in result
-
-    def test_expand_full_form(self) -> None:
-        result = _expand_query("machine learning")
-        assert "machine learning" in result
-        assert "ml" in result
-
-    def test_expand_unknown(self) -> None:
-        result = _expand_query("some unknown term")
-        assert result == ["some unknown term"]
-
-    def test_expand_preserves_order(self) -> None:
-        result = _expand_query("llm")
-        assert result[0] == "llm"

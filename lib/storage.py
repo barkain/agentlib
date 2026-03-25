@@ -179,75 +179,14 @@ def book_dir(book_id: str) -> Path:
 # Concept search (Ls)
 # ---------------------------------------------------------------------------
 
-# Static expansion map: common abbreviations -> full forms.
-# Checked at query time with zero LLM cost.
-_EXPANSION_MAP: dict[str, list[str]] = {
-    "rag": ["retrieval augmented generation", "retrieval-augmented generation"],
-    "llm": ["large language model", "language model"],
-    "sbom": ["software bill of materials"],
-    "ml": ["machine learning"],
-    "nlp": ["natural language processing"],
-    "ci/cd": ["continuous integration", "continuous delivery"],
-    "ci": ["continuous integration"],
-    "cd": ["continuous delivery", "continuous deployment"],
-    "api": ["application programming interface"],
-    "sdk": ["software development kit"],
-    "orm": ["object relational mapping", "object-relational mapping"],
-    "tdd": ["test driven development", "test-driven development"],
-    "bdd": ["behavior driven development", "behavior-driven development"],
-    "di": ["dependency injection"],
-    "ioc": ["inversion of control"],
-    "crud": ["create read update delete"],
-    "rest": ["representational state transfer"],
-    "grpc": ["remote procedure call"],
-    "jwt": ["json web token"],
-    "oauth": ["open authorization"],
-    "saml": ["security assertion markup language"],
-    "rbac": ["role based access control", "role-based access control"],
-    "dag": ["directed acyclic graph"],
-    "etl": ["extract transform load"],
-    "cqrs": ["command query responsibility segregation"],
-    "ddd": ["domain driven design", "domain-driven design"],
-}
-
-# Build reverse map: long form -> abbreviation
-_REVERSE_EXPANSION: dict[str, str] = {}
-for _abbrev, _long_forms in _EXPANSION_MAP.items():
-    for _lf in _long_forms:
-        _REVERSE_EXPANSION[_lf] = _abbrev
-
-
-def _expand_query(query: str) -> list[str]:
-    """Return query plus static expansions. Always includes original."""
-    query_lower = query.lower().strip()
-    expansions = [query_lower]
-    # Abbreviation -> full forms
-    if query_lower in _EXPANSION_MAP:
-        expansions.extend(_EXPANSION_MAP[query_lower])
-    # Full form -> abbreviation
-    if query_lower in _REVERSE_EXPANSION:
-        expansions.append(_REVERSE_EXPANSION[query_lower])
-    # Deduplicate preserving order
-    seen: set[str] = set()
-    unique: list[str] = []
-    for e in expansions:
-        if e not in seen:
-            seen.add(e)
-            unique.append(e)
-    return unique
-
-
 def search_concepts(query: str, book_id: str | None = None) -> dict[str, list[dict]]:
     """Search concept index across books. Substring match on concept names and aliases.
-
-    Uses static query expansion for common abbreviations and checks aliases
-    stored on each concept entry.
 
     Returns dict of concept_name -> list of {ch, sec, chunks} entries.
     If book_id is specified, search only that book.
     """
     results: dict[str, list[dict]] = {}
-    query_terms = _expand_query(query)
+    query_lower = query.lower()
 
     if book_id:
         book_ids = [book_id]
@@ -260,23 +199,13 @@ def search_concepts(query: str, book_id: str | None = None) -> dict[str, list[di
         if manifest is None:
             continue
         for concept, entries in manifest.concept_index.items():
-            concept_lower = concept.lower()
-            match = False
-            # Check concept name against all expanded query terms
-            for term in query_terms:
-                if term in concept_lower:
-                    match = True
-                    break
+            match = query_lower in concept.lower()
             # Check aliases on entries
             if not match:
                 for entry in entries:
                     for alias in getattr(entry, "aliases", []):
-                        alias_lower = alias.lower()
-                        for term in query_terms:
-                            if term in alias_lower:
-                                match = True
-                                break
-                        if match:
+                        if query_lower in alias.lower():
+                            match = True
                             break
                     if match:
                         break
