@@ -5,12 +5,15 @@ import json
 
 from benchmark.models import Trace
 
+# Keys in search_concepts results that are not actual concept matches
+_NON_RESULT_KEYS = {"error", "truncated", "_truncated"}
+
 
 def count_concept_search_hits(trace: Trace) -> tuple[int, int]:
     """Count (hits, misses) for search_concepts calls in a trace.
 
-    A hit is a search_concepts call that returned at least one result.
-    A miss is one that returned an empty result set.
+    A hit is a search_concepts call that returned at least one concept result.
+    A miss is one that returned no results, an error, or a non-JSON response.
     """
     hits = 0
     misses = 0
@@ -21,9 +24,16 @@ def count_concept_search_hits(trace: Trace) -> tuple[int, int]:
             try:
                 result = json.loads(tc.result_content)
             except (json.JSONDecodeError, TypeError):
+                misses += 1
                 continue
-            # Filter out metadata keys (e.g., "_truncated")
-            concept_results = {k: v for k, v in result.items() if not k.startswith("_")}
+            if not isinstance(result, dict):
+                misses += 1
+                continue
+            # Filter out metadata/error keys
+            concept_results = {
+                k: v for k, v in result.items()
+                if k not in _NON_RESULT_KEYS and not k.startswith("_")
+            }
             if concept_results:
                 hits += 1
             else:
