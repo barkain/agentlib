@@ -30,7 +30,11 @@ def _bboxes_overlap(
 
 
 def _table_to_markdown(table: Any) -> str:
-    """Convert a PyMuPDF Table to a markdown pipe table."""
+    """Convert a PyMuPDF Table to a markdown pipe table.
+
+    Strips columns where every cell is empty/None (phantom spacer columns
+    that PyMuPDF detects from inter-column whitespace in the PDF layout).
+    """
     rows = table.extract()
     if not rows:
         return ""
@@ -40,18 +44,27 @@ def _table_to_markdown(table: Any) -> str:
             return ""
         return str(cell).replace("\n", " ").replace("|", "\\|").strip()
 
-    header = rows[0]
-    col_count = len(header)
+    col_count = len(rows[0])
     if col_count == 0:
         return ""
 
+    # Identify non-empty columns (at least one row has content)
+    keep = []
+    for col_idx in range(col_count):
+        if any(_clean(row[col_idx]) if col_idx < len(row) else "" for row in rows):
+            keep.append(col_idx)
+
+    if not keep:
+        return ""
+
+    header = rows[0]
     lines = [
-        "| " + " | ".join(_clean(c) for c in header) + " |",
-        "| " + " | ".join("---" for _ in range(col_count)) + " |",
+        "| " + " | ".join(_clean(header[i]) if i < len(header) else "" for i in keep) + " |",
+        "| " + " | ".join("---" for _ in keep) + " |",
     ]
     for row in rows[1:]:
         cells = list(row) + [None] * max(0, col_count - len(row))
-        lines.append("| " + " | ".join(_clean(c) for c in cells[:col_count]) + " |")
+        lines.append("| " + " | ".join(_clean(cells[i]) for i in keep) + " |")
 
     return "\n".join(lines)
 

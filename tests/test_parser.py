@@ -84,3 +84,18 @@ class TestTableToMarkdown:
         table = _MockTable([["X"], ["a"], ["b"]])
         md = _table_to_markdown(table)
         assert md == "| X |\n| --- |\n| a |\n| b |"
+
+    def test_empty_spacer_columns_stripped(self) -> None:
+        """PyMuPDF often detects phantom spacer columns — they should be removed."""
+        table = _MockTable([
+            ["Phase", None, None, "Description"],
+            ["Design", None, None, "Early lifecycle BOM"],
+            ["Build", None, None, "Build-time BOM"],
+        ])
+        md = _table_to_markdown(table)
+        assert md == (
+            "| Phase | Description |\n"
+            "| --- | --- |\n"
+            "| Design | Early lifecycle BOM |\n"
+            "| Build | Build-time BOM |"
+        )
