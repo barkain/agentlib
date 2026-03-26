@@ -141,6 +141,7 @@ class ParsedSection:
     text: str
     page_start: int | None = None
     page_end: int | None = None
+    images: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

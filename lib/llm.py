@@ -90,43 +90,82 @@ def detect_provider() -> LLMConfig:
     )
 
 
-def call_llm(config: LLMConfig, prompt: str, max_tokens: int = 1024) -> str:
+def call_llm(
+    config: LLMConfig,
+    prompt: str,
+    max_tokens: int = 1024,
+    images: list[tuple[str, str]] | None = None,
+) -> str:
     """Call an LLM with a simple prompt, return the text response.
 
     Uses the Anthropic SDK for Anthropic, OpenAI SDK for everything else.
+
+    Args:
+        config: LLM provider configuration.
+        prompt: The text prompt.
+        max_tokens: Maximum tokens in response.
+        images: Optional list of (base64_data, media_type) tuples for vision.
     """
     if config.provider == "anthropic":
-        return _call_anthropic(config, prompt, max_tokens)
+        return _call_anthropic(config, prompt, max_tokens, images=images)
     else:
-        return _call_openai_compat(config, prompt, max_tokens)
+        return _call_openai_compat(config, prompt, max_tokens, images=images)
 
 
-def _call_anthropic(config: LLMConfig, prompt: str, max_tokens: int) -> str:
+def _call_anthropic(
+    config: LLMConfig, prompt: str, max_tokens: int,
+    *, images: list[tuple[str, str]] | None = None,
+) -> str:
     """Call Anthropic API via their SDK."""
     import anthropic  # type: ignore[import-untyped]
+
+    if images:
+        content: list[dict[str, object]] = []
+        for b64_data, media_type in images:
+            content.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": media_type, "data": b64_data},
+            })
+        content.append({"type": "text", "text": prompt})
+    else:
+        content = prompt  # type: ignore[assignment]
 
     try:
         client = anthropic.Anthropic(api_key=config.api_key)
         response = client.messages.create(
             model=config.model,
             max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": content}],
         )
         return response.content[0].text.strip()
     except Exception as e:
         raise RuntimeError(f"Anthropic API call failed ({type(e).__name__}): {_sanitize_error(str(e))}") from None
 
 
-def _call_openai_compat(config: LLMConfig, prompt: str, max_tokens: int) -> str:
+def _call_openai_compat(
+    config: LLMConfig, prompt: str, max_tokens: int,
+    *, images: list[tuple[str, str]] | None = None,
+) -> str:
     """Call OpenAI-compatible API (works for OpenAI, xAI, Google, DeepSeek)."""
     from openai import OpenAI  # type: ignore[import-untyped]
+
+    if images:
+        content: list[dict[str, object]] = []
+        for b64_data, media_type in images:
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{media_type};base64,{b64_data}"},
+            })
+        content.append({"type": "text", "text": prompt})
+    else:
+        content = prompt  # type: ignore[assignment]
 
     try:
         client = OpenAI(api_key=config.api_key, base_url=config.base_url)
         response = client.chat.completions.create(
             model=config.model,
             max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": content}],
         )
         return response.choices[0].message.content.strip()
     except Exception as e:

@@ -2,23 +2,75 @@
 from __future__ import annotations
 
 import html.parser
+import logging
 import re
 from collections import Counter
 from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger("agentlib.parser")
 
 from lib.models import ParsedSection
+
+
+# ---------------------------------------------------------------------------
+# Table helpers (PyMuPDF find_tables → markdown)
+# ---------------------------------------------------------------------------
+
+def _bboxes_overlap(
+    a: tuple[float, ...], b: tuple[float, ...], tolerance: float = 2.0
+) -> bool:
+    """Return True if bbox *a* overlaps bbox *b* (with tolerance)."""
+    return not (
+        a[2] < b[0] + tolerance
+        or a[0] > b[2] - tolerance
+        or a[3] < b[1] + tolerance
+        or a[1] > b[3] - tolerance
+    )
+
+
+def _table_to_markdown(table: Any) -> str:
+    """Convert a PyMuPDF Table to a markdown pipe table."""
+    rows = table.extract()
+    if not rows:
+        return ""
+
+    def _clean(cell: Any) -> str:
+        if cell is None:
+            return ""
+        return str(cell).replace("\n", " ").replace("|", "\\|").strip()
+
+    header = rows[0]
+    col_count = len(header)
+    if col_count == 0:
+        return ""
+
+    lines = [
+        "| " + " | ".join(_clean(c) for c in header) + " |",
+        "| " + " | ".join("---" for _ in range(col_count)) + " |",
+    ]
+    for row in rows[1:]:
+        cells = list(row) + [None] * max(0, col_count - len(row))
+        lines.append("| " + " | ".join(_clean(c) for c in cells[:col_count]) + " |")
+
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
 # PDF Parsing (PyMuPDF)
 # ---------------------------------------------------------------------------
 
-def parse_pdf(path: Path) -> list[ParsedSection]:
-    """Parse a PDF file into sections using PyMuPDF."""
+def parse_pdf(path: Path) -> tuple[list[ParsedSection], dict[str, bytes]]:
+    """Parse a PDF file into sections using PyMuPDF.
+
+    Returns:
+        (sections, extracted_images) where extracted_images maps filename -> bytes.
+    """
     import fitz  # type: ignore[import-untyped]  # PyMuPDF
 
     doc = fitz.open(str(path))
     sections: list[ParsedSection] = []
+    extracted_images: dict[str, bytes] = {}
 
     # --- Detect font sizes for heading classification ---
     size_counter: Counter[float] = Counter()
@@ -64,11 +116,12 @@ def parse_pdf(path: Path) -> list[ParsedSection]:
     current_chapter_title = "Introduction"
     current_section_title = "Main"
     current_text_parts: list[str] = []
+    current_images: list[str] = []
     current_page_start: int | None = None
     current_page_end: int | None = None
 
     def _flush_section() -> None:
-        nonlocal current_text_parts, current_page_start, current_page_end
+        nonlocal current_text_parts, current_images, current_page_start, current_page_end
         text = "\n".join(current_text_parts).strip()
         if text:
             ch_id = f"ch{current_chapter_num:02d}"
@@ -81,8 +134,10 @@ def parse_pdf(path: Path) -> list[ParsedSection]:
                 text=text,
                 page_start=current_page_start,
                 page_end=current_page_end,
+                images=list(current_images),
             ))
         current_text_parts = []
+        current_images = []
         current_page_start = None
         current_page_end = None
 
@@ -127,6 +182,8 @@ def parse_pdf(path: Path) -> list[ParsedSection]:
 
     # --- Main loop over pages and blocks ---
     page_dict_cache: dict[int, dict] = {}
+    # Track figure numbering per page for unique filenames
+    page_image_count: int = 0
 
     for page_num in range(len(doc)):
         page = doc[page_num]
@@ -137,11 +194,59 @@ def parse_pdf(path: Path) -> list[ParsedSection]:
             page_dict_cache[page_num] = page.get_text("dict")
         pg_dict = page_dict_cache[page_num]
 
+        # --- Detect tables on this page ---
+        table_finder = page.find_tables()
+        table_bboxes: list[tuple[float, ...]] = []
+        table_markdowns: list[tuple[float, str]] = []  # (y0, markdown)
+        for tbl in table_finder.tables:
+            md = _table_to_markdown(tbl)
+            if md:
+                table_bboxes.append(tbl.bbox)
+                table_markdowns.append((tbl.bbox[1], md))
+
+        # --- Extract images from this page ---
+        image_items: list[tuple[float, str, str]] = []  # (y0, placeholder, filename)
+        page_image_count = 0
+        for img_info in page.get_images(full=True):
+            xref = img_info[0]
+            try:
+                img_data = doc.extract_image(xref)
+            except Exception:
+                logger.debug("Failed to extract image xref=%s on page %d", xref, page_num + 1)
+                continue
+            if not img_data or not img_data.get("image"):
+                continue
+            # Filter tiny images (icons, bullets)
+            width = img_data.get("width", 0)
+            height = img_data.get("height", 0)
+            if width < 50 or height < 50:
+                continue
+            if len(img_data["image"]) < 5000:
+                continue
+            page_image_count += 1
+            ext = img_data.get("ext", "png")
+            filename = f"page{page_num + 1:03d}_fig{page_image_count}.{ext}"
+            placeholder = f"[Figure: {filename}]"
+            # Get y-position from image rects
+            rects = page.get_image_rects(xref)
+            y0 = rects[0].y0 if rects else 0.0
+            image_items.append((y0, placeholder, filename))
+            extracted_images[filename] = img_data["image"]
+
+        # Collect content items: (y0, type, text, font_size)
+        content_items: list[tuple[float, str, str, float]] = []
+
         for block in blocks:
             if block[6] != 0:  # Skip image blocks
                 continue
             text = block[4].strip()
             if not text:
+                continue
+
+            block_bbox = block[:4]
+
+            # Skip text blocks that overlap a detected table
+            if any(_bboxes_overlap(block_bbox, tb) for tb in table_bboxes):
                 continue
 
             # Determine font size of this block via bbox matching
@@ -159,39 +264,83 @@ def parse_pdf(path: Path) -> list[ParsedSection]:
                     break
             font_size = round(font_size, 1)
 
-            is_heading, level = _is_heading(text, font_size)
+            content_items.append((by0, "block", text, font_size))
 
-            if is_heading and level == "chapter":
-                _flush_section()
-                current_chapter_num += 1
-                current_section_num = 1
-                current_chapter_title = text.strip()
-                current_section_title = "Main"
-                current_page_start = page_num + 1
-                current_page_end = page_num + 1
-            elif is_heading and level == "section":
-                _flush_section()
-                current_section_num += 1
-                current_section_title = text.strip()
-                current_page_start = page_num + 1
-                current_page_end = page_num + 1
-            else:
+        # Add table items
+        for y0, md in table_markdowns:
+            content_items.append((y0, "table", md, 0.0))
+
+        # Add image placeholder items
+        for y0, placeholder, _filename in image_items:
+            content_items.append((y0, "image", placeholder, 0.0))
+
+        # Sort by vertical position on the page
+        content_items.sort(key=lambda item: item[0])
+
+        # Build a lookup from placeholder text to filename for image items
+        _placeholder_to_filename: dict[str, str] = {
+            placeholder: filename for _, placeholder, filename in image_items
+        }
+
+        # Process items in order
+        for _y0, item_type, text, font_size in content_items:
+            if item_type in ("table", "image"):
                 current_text_parts.append(text)
                 if current_page_start is None:
                     current_page_start = page_num + 1
                 current_page_end = page_num + 1
+                # Track image filenames for the current section
+                if item_type == "image":
+                    img_filename = _placeholder_to_filename.get(text)
+                    if img_filename:
+                        current_images.append(img_filename)
+            else:
+                is_heading, level = _is_heading(text, font_size)
+
+                if is_heading and level == "chapter":
+                    _flush_section()
+                    current_chapter_num += 1
+                    current_section_num = 1
+                    current_chapter_title = text.strip()
+                    current_section_title = "Main"
+                    current_page_start = page_num + 1
+                    current_page_end = page_num + 1
+                elif is_heading and level == "section":
+                    _flush_section()
+                    current_section_num += 1
+                    current_section_title = text.strip()
+                    current_page_start = page_num + 1
+                    current_page_end = page_num + 1
+                else:
+                    current_text_parts.append(text)
+                    if current_page_start is None:
+                        current_page_start = page_num + 1
+                    current_page_end = page_num + 1
 
     _flush_section()
 
     # If no sections were created, create a single section with all text
     # NOTE: doc must still be open here for the fallback to work
     if not sections:
-        full_text = "\n".join(
-            block[4].strip()
-            for pn in range(len(doc))
-            for block in doc[pn].get_text("blocks")
-            if block[6] == 0 and block[4].strip()
-        )
+        all_parts: list[str] = []
+        for pn in range(len(doc)):
+            pg = doc[pn]
+            tf = pg.find_tables()
+            tb_bboxes = [t.bbox for t in tf.tables]
+            tb_mds = [(t.bbox[1], _table_to_markdown(t)) for t in tf.tables]
+            items: list[tuple[float, str]] = []
+            for block in pg.get_text("blocks"):
+                if block[6] != 0 or not block[4].strip():
+                    continue
+                if any(_bboxes_overlap(block[:4], tb) for tb in tb_bboxes):
+                    continue
+                items.append((block[1], block[4].strip()))
+            for y0, md in tb_mds:
+                if md:
+                    items.append((y0, md))
+            items.sort(key=lambda x: x[0])
+            all_parts.extend(text for _, text in items)
+        full_text = "\n".join(all_parts)
         if full_text:
             sections.append(ParsedSection(
                 chapter_id="ch01",
@@ -205,7 +354,7 @@ def parse_pdf(path: Path) -> list[ParsedSection]:
 
     doc.close()
 
-    return sections
+    return sections, extracted_images
 
 
 # ---------------------------------------------------------------------------
@@ -354,12 +503,17 @@ def parse_epub(path: Path) -> list[ParsedSection]:
 # Unified entry point
 # ---------------------------------------------------------------------------
 
-def parse_file(path: Path) -> list[ParsedSection]:
-    """Parse a PDF or EPUB file into sections."""
+def parse_file(path: Path) -> tuple[list[ParsedSection], dict[str, bytes]]:
+    """Parse a PDF or EPUB file into sections.
+
+    Returns:
+        (sections, extracted_images) where extracted_images maps filename -> bytes.
+        For EPUB files, extracted_images is always empty.
+    """
     suffix = path.suffix.lower()
     if suffix == ".pdf":
         return parse_pdf(path)
     elif suffix == ".epub":
-        return parse_epub(path)
+        return parse_epub(path), {}
     else:
         raise ValueError(f"Unsupported file format: {suffix}. Supported: .pdf, .epub")
