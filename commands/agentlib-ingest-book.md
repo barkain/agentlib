@@ -19,4 +19,4 @@ This will:
 4. Build a concept index for fast search
 5. Write manifest and update the library catalog
 
-After ingestion, the book is available in the library. The agent navigates it via the `/knowledge` skill by reading catalog.json, manifest.compact.json, concepts.json, and chunks/*.md
+After ingestion, the book is available in the library. The agent navigates it via the `/agentlib-knowledge` skill by reading catalog.json, manifest.compact.json, concepts.json, and chunks/*.md

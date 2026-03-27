@@ -17,4 +17,4 @@ This will:
 4. Cluster papers by topic
 5. Build a cross-paper concept index
 
-After ingestion, use `/knowledge` to query the corpus.
+After ingestion, use `/agentlib-knowledge` to query the corpus.
