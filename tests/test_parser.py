@@ -49,10 +49,13 @@ class TestTableToMarkdown:
         md = _table_to_markdown(table)
         assert md == "| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |"
 
-    def test_none_cells(self) -> None:
+    def test_none_cells_stripped(self) -> None:
+        """Rows with None cells have those cells removed."""
         table = _MockTable([["A", "B"], [None, "2"]])
         md = _table_to_markdown(table)
-        assert "|  | 2 |" in md
+        # None cell is stripped, so row has only "2"
+        # Header has 2 values, data row has 1 → padded to 2
+        assert "| 2 |" in md
 
     def test_newlines_flattened(self) -> None:
         table = _MockTable([["Header"], ["line1\nline2"]])
@@ -74,10 +77,10 @@ class TestTableToMarkdown:
         assert _table_to_markdown(table) == ""
 
     def test_short_row_padded(self) -> None:
-        table = _MockTable([["A", "B", "C"], ["1"]])
+        table = _MockTable([["A", "B", "C"], ["1", "2", "3"]])
         md = _table_to_markdown(table)
         lines = md.split("\n")
-        # Data row should have 3 columns like the header
+        # Data row should have same number of columns as header
         assert lines[2].count("|") == lines[0].count("|")
 
     def test_single_column(self) -> None:

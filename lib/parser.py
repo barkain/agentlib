@@ -32,8 +32,9 @@ def _bboxes_overlap(
 def _table_to_markdown(table: Any) -> str:
     """Convert a PyMuPDF Table to a markdown pipe table.
 
-    Strips columns where every cell is empty/None (phantom spacer columns
-    that PyMuPDF detects from inter-column whitespace in the PDF layout).
+    PyMuPDF often misaligns headers and data into alternating columns
+    (e.g., header in cols 1,3,5 and data in cols 0,2,4).  We strip
+    empty cells per row to collapse phantom spacer columns.
     """
     rows = table.extract()
     if not rows:
@@ -44,27 +45,28 @@ def _table_to_markdown(table: Any) -> str:
             return ""
         return str(cell).replace("\n", " ").replace("|", "\\|").strip()
 
-    col_count = len(rows[0])
+    # Strip empty cells from each row
+    cleaned = [[_clean(c) for c in row if _clean(c)] for row in rows]
+    # Drop fully empty rows
+    cleaned = [r for r in cleaned if r]
+    if not cleaned:
+        return ""
+
+    # Use max non-empty cell count as column count
+    col_count = max(len(r) for r in cleaned)
     if col_count == 0:
         return ""
 
-    # Identify non-empty columns (at least one row has content)
-    keep = []
-    for col_idx in range(col_count):
-        if any(_clean(row[col_idx]) if col_idx < len(row) else "" for row in rows):
-            keep.append(col_idx)
+    # Pad short rows
+    cleaned = [r + [""] * (col_count - len(r)) for r in cleaned]
 
-    if not keep:
-        return ""
-
-    header = rows[0]
+    header = cleaned[0]
     lines = [
-        "| " + " | ".join(_clean(header[i]) if i < len(header) else "" for i in keep) + " |",
-        "| " + " | ".join("---" for _ in keep) + " |",
+        "| " + " | ".join(header) + " |",
+        "| " + " | ".join("---" for _ in range(col_count)) + " |",
     ]
-    for row in rows[1:]:
-        cells = list(row) + [None] * max(0, col_count - len(row))
-        lines.append("| " + " | ".join(_clean(cells[i]) for i in keep) + " |")
+    for row in cleaned[1:]:
+        lines.append("| " + " | ".join(row) + " |")
 
     return "\n".join(lines)
 
