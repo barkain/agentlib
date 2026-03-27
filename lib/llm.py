@@ -1,8 +1,11 @@
 """Unified LLM client for multiple providers."""
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
+
+logger = logging.getLogger("agentlib.llm")
 
 
 @dataclass
@@ -106,10 +109,19 @@ def call_llm(
         max_tokens: Maximum tokens in response.
         images: Optional list of (base64_data, media_type) tuples for vision.
     """
-    if config.provider == "anthropic":
-        return _call_anthropic(config, prompt, max_tokens, images=images)
-    else:
-        return _call_openai_compat(config, prompt, max_tokens, images=images)
+    try:
+        if config.provider == "anthropic":
+            return _call_anthropic(config, prompt, max_tokens, images=images)
+        else:
+            return _call_openai_compat(config, prompt, max_tokens, images=images)
+    except RuntimeError:
+        if images:
+            logger.warning("LLM call failed with images, retrying text-only")
+            if config.provider == "anthropic":
+                return _call_anthropic(config, prompt, max_tokens, images=None)
+            else:
+                return _call_openai_compat(config, prompt, max_tokens, images=None)
+        raise
 
 
 def _call_anthropic(

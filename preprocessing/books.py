@@ -255,6 +255,11 @@ def ingest_book(
                 if not ch_images:
                     ch_images = None
 
+            MAX_CHAPTER_IMAGES = 5
+            if ch_images and len(ch_images) > MAX_CHAPTER_IMAGES:
+                logger.info("Capping chapter %s images from %d to %d", ch_id, len(ch_images), MAX_CHAPTER_IMAGES)
+                ch_images = ch_images[:MAX_CHAPTER_IMAGES]
+
             summary = summarise_chapter(ch_id, ch_title, sec_data, llm_config=llm_config, images=ch_images)
             chapter_summaries.append(summary)
 

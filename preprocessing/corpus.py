@@ -62,7 +62,6 @@ from lib.storage import (
     find_paper_by_filename,
     list_paper_chunks,
     read_paper_manifest,
-    read_paper_metadata,
     write_cluster_list,
     write_corpus_catalog,
     write_corpus_concept_index,
@@ -372,7 +371,7 @@ def ingest_corpus(
 
         # Parse sections
         try:
-            sections = parse_pdf(pdf_path)
+            sections, _ = parse_pdf(pdf_path)
             all_sections[meta.paper_id] = sections
             logger.info("    Parsed %d sections", len(sections))
         except Exception as e:
