@@ -545,6 +545,41 @@ def read_corpus_concept_index(corpus_id: str) -> CorpusConceptIndex | None:
     return CorpusConceptIndex.from_json(path.read_text(encoding="utf-8"))
 
 
+# ---------------------------------------------------------------------------
+# Image storage
+# ---------------------------------------------------------------------------
+
+def image_dir(book_id: str) -> Path:
+    """Return the images directory for a book, creating it if needed."""
+    _validate_path_component(book_id, "book_id")
+    d = _books_root() / book_id / "images"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def write_image(book_id: str, filename: str, data: bytes) -> Path:
+    """Write an image file to {book_id}/images/{filename}."""
+    _validate_path_component(book_id, "book_id")
+    _validate_path_component(filename, "filename")
+    path = image_dir(book_id) / filename
+    path.write_bytes(data)
+    return path
+
+
+def read_image_base64(book_id: str, filename: str) -> tuple[str, str]:
+    """Return (base64_data, media_type) for an image."""
+    import base64
+    _validate_path_component(book_id, "book_id")
+    _validate_path_component(filename, "filename")
+    path = image_dir(book_id) / filename
+    data = path.read_bytes()
+    b64 = base64.b64encode(data).decode("ascii")
+    ext = path.suffix.lower()
+    media_types = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
+    media_type = media_types.get(ext, "image/png")
+    return b64, media_type
+
+
 def write_corpus_concept_index(corpus_id: str, index: CorpusConceptIndex) -> Path:
     """Write concept_index.json."""
     import json

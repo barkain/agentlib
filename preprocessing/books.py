@@ -150,8 +150,15 @@ def ingest_book(
 
     # --- Stage 1: Parse ---
     logger.info("Stage 1/5: Parsing...")
-    sections = parse_file(file_path)
+    sections, extracted_images = parse_file(file_path)
     logger.info("  Parsed %d sections", len(sections))
+
+    # Write extracted images to disk
+    if extracted_images:
+        from lib.storage import write_image
+        for img_filename, img_bytes in extracted_images.items():
+            write_image(book_id, img_filename, img_bytes)
+        logger.info("  Extracted %d images", len(extracted_images))
 
     if not sections:
         logger.error("No content extracted from file")
@@ -230,7 +237,25 @@ def ingest_book(
                     "chunk_ids": sec_chunk_ids,
                 })
 
-            summary = summarise_chapter(ch_id, ch_title, sec_data, llm_config=llm_config)
+            # Collect images for this chapter
+            ch_images: list[tuple[str, str]] | None = None
+            ch_image_files: list[str] = []
+            for sec in ch_sections:
+                ch_image_files.extend(sec.images)
+            if ch_image_files:
+                from lib.storage import read_image_base64
+                ch_images = []
+                for img_file in ch_image_files:
+                    try:
+                        b64, mt = read_image_base64(book_id, img_file)
+                        ch_images.append((b64, mt))
+                    except FileNotFoundError:
+                        logger.debug("Image not found: %s", img_file)
+                        continue
+                if not ch_images:
+                    ch_images = None
+
+            summary = summarise_chapter(ch_id, ch_title, sec_data, llm_config=llm_config, images=ch_images)
             chapter_summaries.append(summary)
 
         logger.info("  Summarised %d chapters", len(chapter_summaries))

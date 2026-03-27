@@ -86,6 +86,7 @@ def summarise_chapter(
     chapter_title: str,
     sections: list[dict],
     llm_config: LLMConfig | None = None,
+    images: list[tuple[str, str]] | None = None,
 ) -> ChapterSummary:
     """Summarise a single chapter using an LLM.
 
@@ -129,7 +130,10 @@ Respond with ONLY valid JSON in this exact format:
 
 Key concepts should be specific, searchable terms (3-5 per chapter). Section summaries should be concise (1 sentence each)."""
 
-    result_text = call_llm(config, prompt, max_tokens=1024)
+    if images:
+        prompt += "\n\nIf figures/diagrams are included as images, briefly describe their content in the chapter summary."
+
+    result_text = call_llm(config, prompt, max_tokens=1024, images=images)
     data = _parse_json(result_text)
 
     section_summaries = []
