@@ -265,10 +265,38 @@ def ingest_book(
 
         logger.info("  Summarised %d chapters", len(chapter_summaries))
 
+        # Save manifest early (with empty concept index) so stage 4 can be
+        # skipped on retry if stage 5 fails.
+        chapters_for_manifest: list[ChapterInfo] = []
+        for ch_sum in chapter_summaries:
+            sec_infos = [
+                SectionInfo(
+                    id=sec.section_id,
+                    title=sec.title,
+                    summary=sec.summary,
+                    chunk_ids=sec.chunk_ids,
+                )
+                for sec in ch_sum.sections
+            ]
+            chapters_for_manifest.append(ChapterInfo(
+                id=ch_sum.chapter_id,
+                title=ch_sum.title,
+                summary=ch_sum.summary,
+                key_concepts=ch_sum.key_concepts,
+                sections=sec_infos,
+            ))
+        partial_manifest = Manifest(
+            book_id=book_id,
+            chapters=chapters_for_manifest,
+            concept_index={},
+        )
+        write_manifest(partial_manifest)
+        logger.info("  Saved partial manifest (stages 1-4 recoverable)")
+
     # --- Stage 5: Index + Serialise ---
     logger.info("Stage 5/5: Building concept index and serialising...")
 
-    if existing_manifest and not force:
+    if existing_manifest and existing_manifest.concept_index and not force:
         concept_index_raw = existing_manifest.concept_index
         book_summary = _lookup_catalog_summary(book_id)
     else:
@@ -278,9 +306,7 @@ def ingest_book(
         except Exception as e:
             logger.error("Concept extraction failed: %s", e)
             logger.error(
-                "Stages 1-4 completed. Retry with: "
-                "python -m preprocessing.books %s --resume-stage5",
-                file_path,
+                "Stages 1-4 completed. Retry with the same command.",
             )
             raise
 
@@ -378,132 +404,6 @@ def ingest_book(
     return book_id
 
 
-def resume_stage5(
-    file_path: Path,
-    book_id: str | None = None,
-    llm_config: LLMConfig | None = None,
-) -> str:
-    """Resume ingestion from stage 5 (concept extraction + serialisation).
-
-    Requires stages 1-4 to have completed previously (chunks and manifest
-    with chapter summaries on disk).
-    """
-    if llm_config is None:
-        llm_config = detect_provider()
-    if book_id is None:
-        book_id = _slugify(file_path.name)
-
-    logger.info("Resuming stage 5 for '%s'", book_id)
-
-    # Load existing manifest for chapter summaries
-    existing_manifest = read_manifest(book_id)
-    if not existing_manifest:
-        logger.error("No manifest found for '%s'. Run full ingestion first.", book_id)
-        sys.exit(1)
-
-    chapter_summaries = [
-        ChapterSummary(
-            chapter_id=ch.id,
-            title=ch.title,
-            summary=ch.summary,
-            key_concepts=ch.key_concepts,
-            sections=[
-                SectionSummary(
-                    section_id=sec.id,
-                    title=sec.title,
-                    summary=sec.summary,
-                    chunk_ids=sec.chunk_ids,
-                )
-                for sec in ch.sections
-            ],
-        )
-        for ch in existing_manifest.chapters
-    ]
-
-    # Rebuild section_chunks from disk
-    existing = list_chunks(book_id)
-    section_chunks_map: dict[str, list[str]] = defaultdict(list)
-    for cid in existing:
-        section_chunks_map[_section_id_from_chunk(cid)].append(cid)
-    section_chunks = dict(section_chunks_map)
-
-    # Extract concepts (batched)
-    concept_mappings = extract_concepts(book_id, chapter_summaries, llm_config=llm_config)
-
-    # Post-process: fill in missing chunk_ids
-    chapter_chunks: dict[str, list[str]] = defaultdict(list)
-    for sec_id, cids in section_chunks.items():
-        ch_id = sec_id.split("-")[0] if "-" in sec_id else sec_id
-        chapter_chunks[ch_id].extend(cids)
-
-    for concept, mappings in concept_mappings.items():
-        for m in mappings:
-            if not m.chunks:
-                sec_chunks = section_chunks.get(m.sec, [])
-                if sec_chunks:
-                    m.chunks = sec_chunks
-                elif m.ch:
-                    ch_chunks = chapter_chunks.get(m.ch, [])[:3]
-                    if ch_chunks:
-                        m.chunks = ch_chunks
-
-    concept_index_raw: dict[str, list[ConceptEntry]] = {}
-    for concept, mappings in concept_mappings.items():
-        concept_index_raw[concept] = [
-            ConceptEntry(ch=m.ch, sec=m.sec, chunks=m.chunks, aliases=m.aliases)
-            for m in mappings
-        ]
-
-    # Book summary
-    title = _title_from_path(file_path)
-    book_summary = summarise_book(book_id, title, chapter_summaries, llm_config=llm_config)
-
-    # Rebuild and write manifest with concepts
-    chapters: list[ChapterInfo] = []
-    for ch_sum in chapter_summaries:
-        sec_infos = [
-            SectionInfo(
-                id=sec.section_id,
-                title=sec.title,
-                summary=sec.summary,
-                chunk_ids=sec.chunk_ids,
-            )
-            for sec in ch_sum.sections
-        ]
-        chapters.append(ChapterInfo(
-            id=ch_sum.chapter_id,
-            title=ch_sum.title,
-            summary=ch_sum.summary,
-            key_concepts=ch_sum.key_concepts,
-            sections=sec_infos,
-        ))
-
-    manifest = Manifest(
-        book_id=book_id,
-        chapters=chapters,
-        concept_index=concept_index_raw,
-    )
-    write_manifest(manifest)
-    write_compact_manifest(manifest)
-    write_concept_index(book_id, manifest.concept_index)
-
-    # Update catalog
-    total_chunks = len(existing)
-    catalog_entry = CatalogEntry(
-        id=book_id,
-        title=title,
-        domain_tags=[],
-        summary=book_summary,
-        chapter_count=len(chapters),
-        total_chunks=total_chunks,
-    )
-    update_catalog_entry(catalog_entry)
-    write_navigation_md()
-
-    logger.info("Stage 5 complete for '%s': %d chapters, %d chunks", book_id, len(chapters), total_chunks)
-    return book_id
-
-
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -512,7 +412,6 @@ def main() -> None:
     parser.add_argument("file", type=Path, help="Path to PDF or EPUB file")
     parser.add_argument("--book-id", help="Override book identifier (default: derived from filename)")
     parser.add_argument("--force", action="store_true", help="Re-run all stages even if outputs exist")
-    parser.add_argument("--resume-stage5", action="store_true", help="Resume from stage 5 (concept extraction) after a previous failure")
 
     args = parser.parse_args()
 
@@ -526,10 +425,7 @@ def main() -> None:
         logger.error("File not found: %s", args.file)
         sys.exit(1)
 
-    if args.resume_stage5:
-        resume_stage5(args.file, book_id=args.book_id)
-    else:
-        ingest_book(args.file, book_id=args.book_id, force=args.force)
+    ingest_book(args.file, book_id=args.book_id, force=args.force)
 
 
 if __name__ == "__main__":
