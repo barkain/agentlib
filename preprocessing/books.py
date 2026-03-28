@@ -308,7 +308,7 @@ def ingest_book(
             try:
                 concept_mappings = extract_concepts(book_id, chapter_summaries, llm_config=llm_config)
                 break
-            except RuntimeError as e:
+            except (RuntimeError, TypeError, AttributeError, ValueError) as e:
                 if attempt < max_retries:
                     logger.warning("Concept extraction failed (attempt %d/%d): %s", attempt, max_retries, e)
                     logger.info("  Retrying in 30 seconds...")

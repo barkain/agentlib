@@ -189,8 +189,8 @@ class TestExtractConceptsBatching:
         result = extract_concepts("test-book", chapters)
 
         assert mock_llm.call_count == 3
-        # Should have one concept per chapter (120 unique concepts)
-        assert len(result) == 120
+        # 120 unique concepts capped to 50
+        assert len(result) == 50
 
     @patch("lib.summariser.call_llm")
     @patch("lib.summariser.detect_provider")
@@ -237,3 +237,60 @@ class TestExtractConceptsBatching:
         chapter_ids = {m.ch for m in result[shared_concept]}
         assert "ch01" in chapter_ids
         assert f"ch{_CONCEPT_BATCH_SIZE + 1:02d}" in chapter_ids
+
+    @patch("lib.summariser.call_llm")
+    @patch("lib.summariser.detect_provider")
+    def test_dedup_locations_across_batches(self, mock_provider, mock_llm):
+        """Duplicate locations from two batches should be deduplicated."""
+        chapters = [_make_chapter(i) for i in range(1, _CONCEPT_BATCH_SIZE + 2)]
+        mock_provider.return_value = MagicMock()
+
+        shared_concept = "Shared Concept"
+
+        def side_effect(config, prompt, **kwargs):
+            # Both batches return the same concept with the same location + a unique one
+            return json.dumps({
+                shared_concept: {
+                    "aliases": ["shared", "sc"],
+                    "locations": [
+                        {"ch": "ch01", "sec": "ch01-s01", "chunks": ["ch01-s01-001"]},
+                    ],
+                }
+            })
+
+        mock_llm.side_effect = side_effect
+
+        result = extract_concepts("test-book", chapters)
+
+        assert shared_concept in result
+        # Same location from both batches should be deduplicated to 1
+        assert len(result[shared_concept]) == 1
+        # Aliases should be deduplicated
+        assert result[shared_concept][0].aliases == ["shared", "sc"]
+
+    @patch("lib.summariser.call_llm")
+    @patch("lib.summariser.detect_provider")
+    def test_concept_cap_at_50(self, mock_provider, mock_llm):
+        """More than 50 concepts should be capped to 50."""
+        chapters = [_make_chapter(1)]
+        mock_provider.return_value = MagicMock()
+
+        # Return 60 concepts, each with varying number of locations
+        concepts: dict = {}
+        for i in range(60):
+            locations = [
+                {"ch": f"ch{j:02d}", "sec": f"ch{j:02d}-s01", "chunks": [f"ch{j:02d}-s01-001"]}
+                for j in range(1, i + 2)  # concept i has i+1 locations
+            ]
+            concepts[f"Concept {i:03d}"] = {
+                "aliases": [f"c{i}"],
+                "locations": locations,
+            }
+        mock_llm.return_value = json.dumps(concepts)
+
+        result = extract_concepts("test-book", chapters)
+
+        assert len(result) == 50
+        # Verify the kept concepts are the ones with most locations
+        kept_counts = [len(v) for v in result.values()]
+        assert min(kept_counts) >= 11  # top 50 of 60 means at least 11 locations

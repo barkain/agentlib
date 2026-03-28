@@ -229,6 +229,7 @@ def extract_concepts(
                      len(batches), len(chapter_summaries))
 
     all_concepts: dict[str, list[ConceptMapping]] = {}
+    concept_key_map: dict[str, str] = {}
 
     for batch_idx, batch in enumerate(batches):
         if len(batches) > 1:
@@ -268,14 +269,45 @@ Include {concepts_target} concepts. Use specific, searchable terms. Merge simila
 
         result_text = call_llm(config, prompt, max_tokens=4096)
         data = _parse_json(result_text)
+        if not isinstance(data, dict):
+            raise RuntimeError(f"LLM returned non-dict response: {type(data).__name__}")
         batch_concepts = _parse_concept_response(data)
 
         # Merge into all_concepts
         for concept, mappings in batch_concepts.items():
-            if concept in all_concepts:
-                all_concepts[concept].extend(mappings)
+            # Normalize key for matching
+            key = concept.strip().lower()
+            if key in concept_key_map:
+                canonical = concept_key_map[key]
+                all_concepts[canonical].extend(mappings)
             else:
-                all_concepts[concept] = mappings
+                concept_key_map[key] = concept
+                all_concepts[concept] = list(mappings)
+
+    # Deduplicate locations and aliases per concept
+    for concept in all_concepts:
+        seen: set[tuple] = set()
+        deduped: list[ConceptMapping] = []
+        all_aliases: list[str] = []
+        for m in all_concepts[concept]:
+            loc_key = (m.ch, m.sec, tuple(sorted(m.chunks)))
+            if loc_key not in seen:
+                seen.add(loc_key)
+                deduped.append(m)
+            all_aliases.extend(m.aliases)
+        # Dedupe aliases preserving order
+        unique_aliases: list[str] = list(dict.fromkeys(all_aliases))
+        for m in deduped:
+            m.aliases = unique_aliases
+        all_concepts[concept] = deduped
+
+    # Cap total concepts
+    MAX_TOTAL_CONCEPTS = 50
+    if len(all_concepts) > MAX_TOTAL_CONCEPTS:
+        logger.info("  Capping concepts from %d to %d", len(all_concepts), MAX_TOTAL_CONCEPTS)
+        # Keep concepts with most locations (broadest coverage)
+        sorted_concepts = sorted(all_concepts.items(), key=lambda x: len(x[1]), reverse=True)
+        all_concepts = dict(sorted_concepts[:MAX_TOTAL_CONCEPTS])
 
     return all_concepts
 
