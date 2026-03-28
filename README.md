@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="assets/hero.png" alt="AgentLib — Agentic Knowledge Navigation" width="100%">
-</p>
+<video src="assets/agentlib_hero.mp4" autoplay loop muted playsinline width="100%"></video>
 
 # AgentLib
 
