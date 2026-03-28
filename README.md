@@ -22,51 +22,22 @@ No MCP server required. No tool calls. The agent reads preprocessed files direct
 
 ### How agents navigate the library
 
-```
-                     User question
-                          │
-                          ▼
-                ┌───────────────────┐
-                │ library-researcher│
-                │ (isolated context)│
-                └────────┬──────────┘
-                         │
-          ┌──────────────┼──────────────┐
-          │              │              │
-          ▼              ▼              ▼
-    ┌──────────┐  ┌─────────────┐  ┌──────────┐
-    │NAVIGATION│  │concepts.json│  │ catalog  │
-    │   .md    │  │  (Ls)       │  │  (L0)    │
-    │ ~50 tok  │  │ ~200 tok    │  │ ~50 tok  │
-    │ per book │  │             │  │ per book │
-    └──────────┘  └─────┬───────┘  └────┬─────┘
-          │             │               │
-          │      ┌──────┴──────┐        │
-          │      │ concept     │        │
-          │      │ name match? │        │
-          │      │ alias match?│        │
-          │      └──────┬──────┘        │
-          │          hit│   miss        │
-          │             │    │          │
-          │             │    ▼          │
-          │             │  ┌─────────┐  │
-          │             │  │manifest │  │
-          │             │  │  (L1)   │  │
-          │             │  │~500 tok │  │
-          │             │  └────┬────┘  │
-          │             │       │       │
-          │             ▼       ▼       │
-          │         ┌──────────────┐    │
-          │         │  chunks (L2) │    │
-          │         │ 300-500 tok  │    │
-          │         │   each       │    │ 
-          │         └──────┬───────┘    │
-          │                │            │
-          └────────────────┼────────────┘
-                           │
-                           ▼
-                   Synthesized answer
-                  (returned to user)
+```mermaid
+graph LR
+    Q["User question"] --> R["library-researcher<br/>(isolated context)"]
+    R --> NAV["NAVIGATION.md<br/>~50 tok per book"]
+    R --> CS["concepts.json (Ls)<br/>~200 tok"]
+    R --> CAT["catalog (L0)<br/>~50 tok per book"]
+
+    CS --> M{"concept/alias<br/>match?"}
+    M -- hit --> CH["chunks (L2)<br/>300-500 tok each"]
+    M -- miss --> MAN["manifest (L1)<br/>~500 tok"]
+    MAN --> CH
+
+    NAV --> CH
+    CAT --> MAN
+
+    CH --> A["Synthesized answer<br/>(returned to user)"]
 ```
 
 **Ls hit (fast path):** NAVIGATION → concepts.json → chunks — **2-3 reads, ~1k tokens**
