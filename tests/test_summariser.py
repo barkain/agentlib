@@ -2,18 +2,22 @@
 # ruff: noqa: S101
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from unittest.mock import patch, MagicMock
 
 from lib.summariser import (
     ChapterSummary,
     SectionSummary,
     ConceptMapping,
+    async_summarise_chapter,
     _format_chapters_text,
     _parse_concept_response,
     extract_concepts,
     _CONCEPT_BATCH_SIZE,
 )
+from lib.llm import async_call_llm
 
 
 # ---------------------------------------------------------------------------
@@ -294,3 +298,141 @@ class TestExtractConceptsBatching:
         # Verify the kept concepts are the ones with most locations
         kept_counts = [len(v) for v in result.values()]
         assert min(kept_counts) >= 11  # top 50 of 60 means at least 11 locations
+
+
+# ---------------------------------------------------------------------------
+# Mock LLM response for async tests
+# ---------------------------------------------------------------------------
+
+MOCK_CHAPTER_RESPONSE = json.dumps({
+    "chapter_summary": "Test summary",
+    "key_concepts": ["concept1"],
+    "section_summaries": [
+        {"section_id": "ch01-s01", "title": "Sec 1", "summary": "Sec summary"}
+    ]
+})
+
+
+# ---------------------------------------------------------------------------
+# TestAsyncSummariseChapter
+# ---------------------------------------------------------------------------
+
+class TestAsyncSummariseChapter:
+    @patch("lib.llm.call_llm")
+    def test_async_returns_same_as_sync(self, mock_llm):
+        """Mock call_llm, call async_summarise_chapter, verify ChapterSummary fields."""
+        mock_llm.return_value = MOCK_CHAPTER_RESPONSE
+
+        sections = [{"section_id": "ch01-s01", "title": "Sec 1", "text": "Some text", "chunk_ids": ["ch01-s01-001"]}]
+        result = asyncio.run(async_summarise_chapter(
+            chapter_id="ch01",
+            chapter_title="Chapter 1",
+            sections=sections,
+        ))
+
+        assert isinstance(result, ChapterSummary)
+        assert result.chapter_id == "ch01"
+        assert result.title == "Chapter 1"
+        assert result.summary == "Test summary"
+        assert result.key_concepts == ["concept1"]
+        assert len(result.sections) == 1
+        assert result.sections[0].section_id == "ch01-s01"
+        assert result.sections[0].title == "Sec 1"
+        assert result.sections[0].summary == "Sec summary"
+
+    @patch("lib.llm.call_llm")
+    def test_async_respects_semaphore(self, mock_llm):
+        """Semaphore with value 2 should limit concurrency across 5 tasks."""
+        max_concurrent = {"value": 0}
+        current_concurrent = {"value": 0}
+
+        original_return = MOCK_CHAPTER_RESPONSE
+
+        async def _run():
+            semaphore = asyncio.Semaphore(2)
+
+            async def _tracked_summarise(ch_id):
+                # We wrap async_summarise_chapter but track concurrency via the mock
+                return await async_summarise_chapter(
+                    chapter_id=ch_id,
+                    chapter_title=f"Chapter {ch_id}",
+                    sections=[{"section_id": f"{ch_id}-s01", "title": "S1", "text": "txt", "chunk_ids": []}],
+                    semaphore=semaphore,
+                )
+
+            tasks = [_tracked_summarise(f"ch{i:02d}") for i in range(1, 6)]
+            return await asyncio.gather(*tasks)
+
+        def _slow_llm(config, prompt, max_tokens=1024, images=None):
+            current_concurrent["value"] += 1
+            if current_concurrent["value"] > max_concurrent["value"]:
+                max_concurrent["value"] = current_concurrent["value"]
+            import time as _time
+            _time.sleep(0.05)
+            current_concurrent["value"] -= 1
+            return original_return
+
+        mock_llm.side_effect = _slow_llm
+
+        results = asyncio.run(_run())
+
+        assert len(results) == 5
+        assert all(isinstance(r, ChapterSummary) for r in results)
+        assert max_concurrent["value"] <= 2
+
+
+# ---------------------------------------------------------------------------
+# TestAsyncCallLlm
+# ---------------------------------------------------------------------------
+
+class TestAsyncCallLlm:
+    @patch("lib.llm.call_llm")
+    def test_async_call_llm_returns_result(self, mock_llm):
+        """Mock call_llm, call async_call_llm, verify same result."""
+        mock_llm.return_value = "test response"
+
+        from lib.llm import LLMConfig
+        config = LLMConfig(provider="openai", model="gpt-4", api_key="fake")
+        result = asyncio.run(async_call_llm(config, "test prompt"))
+
+        assert result == "test response"
+        mock_llm.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# TestParallelSummarization
+# ---------------------------------------------------------------------------
+
+class TestParallelSummarization:
+    @patch("lib.llm.call_llm")
+    def test_parallel_faster_than_sequential(self, mock_llm):
+        """10 chapters with semaphore=5 should take ~2 waves, not 10 sequential calls."""
+
+        def _slow_llm(config, prompt, max_tokens=1024, images=None):
+            import time as _time
+            _time.sleep(0.1)
+            return MOCK_CHAPTER_RESPONSE
+
+        mock_llm.side_effect = _slow_llm
+
+        async def _run():
+            semaphore = asyncio.Semaphore(5)
+            tasks = [
+                async_summarise_chapter(
+                    chapter_id=f"ch{i:02d}",
+                    chapter_title=f"Chapter {i}",
+                    sections=[{"section_id": f"ch{i:02d}-s01", "title": "S1", "text": "txt", "chunk_ids": []}],
+                    semaphore=semaphore,
+                )
+                for i in range(1, 11)
+            ]
+            return await asyncio.gather(*tasks)
+
+        start = time.time()
+        results = asyncio.run(_run())
+        elapsed = time.time() - start
+
+        assert len(results) == 10
+        assert all(isinstance(r, ChapterSummary) for r in results)
+        # Should be ~0.2s (2 waves of 5), definitely less than 0.5s
+        assert elapsed < 0.5, f"Parallel execution took {elapsed:.2f}s, expected < 0.5s"
