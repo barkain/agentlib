@@ -433,9 +433,9 @@ class TestParallelSummarization:
             ]
             return await asyncio.gather(*tasks)
 
-        start = time.time()
+        start = time.monotonic()
         results = asyncio.run(_run())
-        elapsed = time.time() - start
+        elapsed = time.monotonic() - start
 
         assert len(results) == 10
         assert all(isinstance(r, ChapterSummary) for r in results)

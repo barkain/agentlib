@@ -223,7 +223,10 @@ def ingest_book(
         chapter_groups = _group_by_chapter(sections)
 
         # Determine concurrency from env (default 10)
-        concurrency = int(os.environ.get("AGENTLIB_CONCURRENCY", "10"))
+        try:
+            concurrency = max(1, int(os.environ.get("AGENTLIB_CONCURRENCY", "10")))
+        except (ValueError, TypeError):
+            concurrency = 10
 
         import asyncio
         from lib.summariser import async_summarise_chapter
@@ -310,7 +313,8 @@ def ingest_book(
     # --- Stage 5: Index + Serialise ---
     logger.info("Stage 5/5: Building concept index and serialising...")
 
-    if existing_manifest and existing_manifest.concept_index and not force:
+    existing_in_catalog = bool(_lookup_catalog_summary(book_id))
+    if existing_manifest and existing_in_catalog and not force:
         concept_index_raw = existing_manifest.concept_index
         book_summary = _lookup_catalog_summary(book_id)
     else:
