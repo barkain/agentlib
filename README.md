@@ -4,11 +4,16 @@
 
 # AgentLib
 
-**AI agents waste massive tokens navigating knowledge because they have no map.**
+**Curate your knowledge library. Your agent works from sources you trust.**
 
-When an agent needs to answer a question from a book, a paper corpus, or a database, it has no idea where to look. So it guesses. It reads the wrong file, backs up, reads another, accumulates context — and every token it has already read gets re-processed on every subsequent call. The cost isn't linear. It's **O(n^2)** in the number of tool calls: the marginal cost of call *n+1* equals the entire accumulated context at that point.
+AI agents search the internet or re-read documents from scratch on every question. They have no persistent knowledge, no domain expertise, and no way to distinguish trusted sources from noise.
 
-AgentLib gives agents a map.
+AgentLib changes this. Ingest the books, papers, and documents that matter for your work — once. Your agent gets a structured, indexed library it can navigate autonomously: finding relevant content in seconds, citing exact sources, and proactively consulting your library while coding.
+
+- **Your sources, your curation** — choose which books, papers, standards, and internal docs your agent should know
+- **Always available** — ingested once, accessible across every session with no re-uploading
+- **Proactive, not reactive** — the agent checks the library automatically when working on domain-specific tasks
+- **Citable answers** — every response traces back to a specific book, chapter, and section
 
 ## How it works
 
