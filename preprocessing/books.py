@@ -71,7 +71,6 @@ from lib.summariser import (
     SectionSummary,
     extract_concepts,
     summarise_book,
-    summarise_chapter,
 )
 
 logger = logging.getLogger("agentlib.ingest")
@@ -222,47 +221,61 @@ def ingest_book(
         ]
     else:
         chapter_groups = _group_by_chapter(sections)
-        chapter_summaries: list[ChapterSummary] = []
 
-        for ch_id, ch_sections in sorted(chapter_groups.items()):
-            ch_title = ch_sections[0].chapter_title
-            logger.info("  Summarising %s: %s", ch_id, ch_title)
+        # Determine concurrency from env (default 10)
+        concurrency = int(os.environ.get("AGENTLIB_CONCURRENCY", "10"))
 
-            sec_data = []
-            for sec in ch_sections:
-                sec_chunk_ids = section_chunks.get(sec.section_id, [])
-                sec_data.append({
-                    "section_id": sec.section_id,
-                    "title": sec.section_title,
-                    "text": sec.text,
-                    "chunk_ids": sec_chunk_ids,
-                })
+        import asyncio
+        from lib.summariser import async_summarise_chapter
 
-            # Collect images for this chapter
-            ch_images: list[tuple[str, str]] | None = None
-            ch_image_files: list[str] = []
-            for sec in ch_sections:
-                ch_image_files.extend(sec.images)
-            if ch_image_files:
-                from lib.storage import read_image_base64
-                ch_images = []
-                for img_file in ch_image_files:
-                    try:
-                        b64, mt = read_image_base64(book_id, img_file)
-                        ch_images.append((b64, mt))
-                    except FileNotFoundError:
-                        logger.debug("Image not found: %s", img_file)
-                        continue
-                if not ch_images:
-                    ch_images = None
+        async def _summarise_all() -> list[ChapterSummary]:
+            sem = asyncio.Semaphore(concurrency)
+            tasks = []
 
-            MAX_CHAPTER_IMAGES = 5
-            if ch_images and len(ch_images) > MAX_CHAPTER_IMAGES:
-                logger.info("Capping chapter %s images from %d to %d", ch_id, len(ch_images), MAX_CHAPTER_IMAGES)
-                ch_images = ch_images[:MAX_CHAPTER_IMAGES]
+            for ch_id, ch_sections in sorted(chapter_groups.items()):
+                ch_title = ch_sections[0].chapter_title
 
-            summary = summarise_chapter(ch_id, ch_title, sec_data, llm_config=llm_config, images=ch_images)
-            chapter_summaries.append(summary)
+                sec_data = []
+                for sec in ch_sections:
+                    sec_chunk_ids = section_chunks.get(sec.section_id, [])
+                    sec_data.append({
+                        "section_id": sec.section_id,
+                        "title": sec.section_title,
+                        "text": sec.text,
+                        "chunk_ids": sec_chunk_ids,
+                    })
+
+                # Collect images for this chapter
+                ch_images: list[tuple[str, str]] | None = None
+                ch_image_files: list[str] = []
+                for sec in ch_sections:
+                    ch_image_files.extend(sec.images)
+                if ch_image_files:
+                    from lib.storage import read_image_base64
+                    ch_images = []
+                    for img_file in ch_image_files:
+                        try:
+                            b64, mt = read_image_base64(book_id, img_file)
+                            ch_images.append((b64, mt))
+                        except FileNotFoundError:
+                            continue
+                    if not ch_images:
+                        ch_images = None
+
+                MAX_CHAPTER_IMAGES = 5
+                if ch_images and len(ch_images) > MAX_CHAPTER_IMAGES:
+                    ch_images = ch_images[:MAX_CHAPTER_IMAGES]
+
+                tasks.append(async_summarise_chapter(
+                    ch_id, ch_title, sec_data,
+                    llm_config=llm_config, images=ch_images,
+                    semaphore=sem,
+                ))
+
+            logger.info("  Summarising %d chapters (concurrency=%d)...", len(tasks), concurrency)
+            return list(await asyncio.gather(*tasks))
+
+        chapter_summaries = asyncio.run(_summarise_all())
 
         logger.info("  Summarised %d chapters", len(chapter_summaries))
 
