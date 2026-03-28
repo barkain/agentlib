@@ -54,6 +54,8 @@ L1  "What's inside?"     →  manifest: structure, summaries, concepts      (mod
 L2  "Give me the content" →  small self-contained chunks, 300-500 tok     (expensive)
 ```
 
+Chunks are **content-aware**: tables and code fences are kept atomic (soft cap 500, hard cap 1 000 tokens). PDF tables are extracted via PyMuPDF and rendered as markdown pipe tables. Figures are extracted from PDFs with vision-based summarization, appearing as placeholders in chunks.
+
 Plus a **concept index** shortcut (Ls) that jumps directly to relevant chunks when the agent already knows what it's looking for. Each concept carries LLM-generated aliases so the agent can find it by abbreviation, acronym, or alternative phrasing.
 
 ### Library structure
@@ -166,6 +168,8 @@ claude --plugin-dir ./agentlib
 /agentlib:agentlib-ingest-book ~/books/owasp-guide.pdf
 ```
 
+Ingestion runs chapter summarization in parallel and batches concept extraction in groups of 50 for large books. If ingestion fails partway through, re-run the same command — completed stages are skipped automatically. Stage 5 (concept extraction) retries up to 3 times on API failures.
+
 ### Ingest a paper corpus
 ```bash
 /agentlib:agentlib-ingest-corpus ~/papers/my-research-papers/
@@ -203,7 +207,7 @@ AgentLib supports 5 LLM providers for ingestion and summarization (auto-detected
 | Google | Gemini 2.0 Flash | `GOOGLE_API_KEY` |
 | DeepSeek | DeepSeek Chat | `DEEPSEEK_API_KEY` |
 
-Set `AGENTLIB_PROVIDER` to override auto-detection.
+Set `AGENTLIB_PROVIDER` to override auto-detection. Set `AGENTLIB_CONCURRENCY` to control parallel ingestion workers (default 10).
 
 ## Examples
 
