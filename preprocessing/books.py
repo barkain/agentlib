@@ -40,6 +40,7 @@ import argparse
 import logging
 import re
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -301,14 +302,23 @@ def ingest_book(
         book_summary = _lookup_catalog_summary(book_id)
     else:
         # Extract concepts (batched LLM calls for large books)
-        try:
-            concept_mappings = extract_concepts(book_id, chapter_summaries, llm_config=llm_config)
-        except Exception as e:
-            logger.error("Concept extraction failed: %s", e)
-            logger.error(
-                "Stages 1-4 completed. Retry with the same command.",
-            )
-            raise
+        max_retries = 3
+        concept_mappings: dict | None = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                concept_mappings = extract_concepts(book_id, chapter_summaries, llm_config=llm_config)
+                break
+            except RuntimeError as e:
+                if attempt < max_retries:
+                    logger.warning("Concept extraction failed (attempt %d/%d): %s", attempt, max_retries, e)
+                    logger.info("  Retrying in 30 seconds...")
+                    time.sleep(30)
+                else:
+                    logger.error("Concept extraction failed after %d attempts: %s", max_retries, e)
+                    logger.error("Stages 1-4 completed. Retry with the same command.")
+                    raise
+        if concept_mappings is None:  # pragma: no cover – loop always breaks or raises
+            raise RuntimeError("Concept extraction produced no result")
 
         # Post-process: fill in missing chunk_ids from section_chunks mapping
         # Pre-build chapter lookup for fallback
