@@ -1,4 +1,6 @@
-<video src="assets/agentlib_hero.mp4" autoplay loop muted playsinline width="100%"></video>
+<p align="center">
+  <img src="assets/agentlib_hero.gif" alt="AgentLib Demo" width="800">
+</p>
 
 # AgentLib
 
