@@ -52,6 +52,13 @@ The concept index includes **aliases** (abbreviations, acronyms, synonyms) gener
 
 *The agent automatically consults the knowledge library when it detects a domain-specific question — no explicit command needed.*
 
+<details>
+<summary>Expanded: how the library-researcher navigates</summary>
+<p align="center">
+  <img src="assets/demo_library_researcher.png" alt="Library researcher agent navigation" width="800">
+</p>
+</details>
+
 ### Three metadata layers
 
 ```
