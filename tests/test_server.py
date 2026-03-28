@@ -2,13 +2,6 @@
 # ruff: noqa: S101
 from __future__ import annotations
 
-import pytest
-
-try:
-    import fastmcp  # noqa: F401
-except ImportError:
-    pytest.skip("fastmcp not installed", allow_module_level=True)
-
 import json
 from pathlib import Path
 
