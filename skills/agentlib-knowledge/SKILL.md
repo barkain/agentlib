@@ -1,6 +1,6 @@
 ---
 name: agentlib-knowledge
-description: "Knowledge library navigation. Trigger on: research questions, book references, domain knowledge queries, 'according to', 'what does the book say', 'look up', 'find in', or any question that may be answered by ingested books/documents/papers. Do NOT trigger on: code editing, git operations, file management, web browsing requests."
+description: "Knowledge library navigation. Trigger on: research questions, book references, domain knowledge queries, 'according to', 'what does the book say', 'look up', 'find in', or any question that may be answered by ingested books/documents/papers. Also trigger when: writing code that involves domain-specific parameters, protocols, standards, or configurations; encountering technical terms that might be defined in the library; the user asks about methodology, best practices, or procedures from a specific domain. Do NOT trigger on: general programming tasks (loops, data structures, algorithms), git operations, file management, web browsing requests."
 ---
 
 ## AgentLib — Knowledge Library
