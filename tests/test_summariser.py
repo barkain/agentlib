@@ -17,7 +17,9 @@ from lib.summariser import (
     extract_concepts,
     _CONCEPT_BATCH_SIZE,
 )
-from lib.llm import async_call_llm
+from lib.llm import async_call_llm, LLMConfig
+
+DUMMY_CONFIG = LLMConfig(provider="openai", model="test", api_key="test-key")
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +330,7 @@ class TestAsyncSummariseChapter:
             chapter_id="ch01",
             chapter_title="Chapter 1",
             sections=sections,
+            llm_config=DUMMY_CONFIG,
         ))
 
         assert isinstance(result, ChapterSummary)
@@ -358,6 +361,7 @@ class TestAsyncSummariseChapter:
                     chapter_title=f"Chapter {ch_id}",
                     sections=[{"section_id": f"{ch_id}-s01", "title": "S1", "text": "txt", "chunk_ids": []}],
                     semaphore=semaphore,
+                    llm_config=DUMMY_CONFIG,
                 )
 
             tasks = [_tracked_summarise(f"ch{i:02d}") for i in range(1, 6)]
@@ -423,6 +427,7 @@ class TestParallelSummarization:
                     chapter_title=f"Chapter {i}",
                     sections=[{"section_id": f"ch{i:02d}-s01", "title": "S1", "text": "txt", "chunk_ids": []}],
                     semaphore=semaphore,
+                    llm_config=DUMMY_CONFIG,
                 )
                 for i in range(1, 11)
             ]
