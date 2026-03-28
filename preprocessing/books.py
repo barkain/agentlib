@@ -40,6 +40,7 @@ import argparse
 import logging
 import re
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -70,7 +71,6 @@ from lib.summariser import (
     SectionSummary,
     extract_concepts,
     summarise_book,
-    summarise_chapter,
 )
 
 logger = logging.getLogger("agentlib.ingest")
@@ -221,59 +221,121 @@ def ingest_book(
         ]
     else:
         chapter_groups = _group_by_chapter(sections)
-        chapter_summaries: list[ChapterSummary] = []
 
-        for ch_id, ch_sections in sorted(chapter_groups.items()):
-            ch_title = ch_sections[0].chapter_title
-            logger.info("  Summarising %s: %s", ch_id, ch_title)
+        # Determine concurrency from env (default 10)
+        try:
+            concurrency = max(1, int(os.environ.get("AGENTLIB_CONCURRENCY", "10")))
+        except (ValueError, TypeError):
+            concurrency = 10
 
-            sec_data = []
-            for sec in ch_sections:
-                sec_chunk_ids = section_chunks.get(sec.section_id, [])
-                sec_data.append({
-                    "section_id": sec.section_id,
-                    "title": sec.section_title,
-                    "text": sec.text,
-                    "chunk_ids": sec_chunk_ids,
-                })
+        import asyncio
+        from lib.summariser import async_summarise_chapter
 
-            # Collect images for this chapter
-            ch_images: list[tuple[str, str]] | None = None
-            ch_image_files: list[str] = []
-            for sec in ch_sections:
-                ch_image_files.extend(sec.images)
-            if ch_image_files:
-                from lib.storage import read_image_base64
-                ch_images = []
-                for img_file in ch_image_files:
-                    try:
-                        b64, mt = read_image_base64(book_id, img_file)
-                        ch_images.append((b64, mt))
-                    except FileNotFoundError:
-                        logger.debug("Image not found: %s", img_file)
-                        continue
-                if not ch_images:
-                    ch_images = None
+        async def _summarise_all() -> list[ChapterSummary]:
+            sem = asyncio.Semaphore(concurrency)
+            tasks = []
 
-            MAX_CHAPTER_IMAGES = 5
-            if ch_images and len(ch_images) > MAX_CHAPTER_IMAGES:
-                logger.info("Capping chapter %s images from %d to %d", ch_id, len(ch_images), MAX_CHAPTER_IMAGES)
-                ch_images = ch_images[:MAX_CHAPTER_IMAGES]
+            for ch_id, ch_sections in sorted(chapter_groups.items()):
+                ch_title = ch_sections[0].chapter_title
 
-            summary = summarise_chapter(ch_id, ch_title, sec_data, llm_config=llm_config, images=ch_images)
-            chapter_summaries.append(summary)
+                sec_data = []
+                for sec in ch_sections:
+                    sec_chunk_ids = section_chunks.get(sec.section_id, [])
+                    sec_data.append({
+                        "section_id": sec.section_id,
+                        "title": sec.section_title,
+                        "text": sec.text,
+                        "chunk_ids": sec_chunk_ids,
+                    })
+
+                # Collect images for this chapter
+                ch_images: list[tuple[str, str]] | None = None
+                ch_image_files: list[str] = []
+                for sec in ch_sections:
+                    ch_image_files.extend(sec.images)
+                if ch_image_files:
+                    from lib.storage import read_image_base64
+                    ch_images = []
+                    for img_file in ch_image_files:
+                        try:
+                            b64, mt = read_image_base64(book_id, img_file)
+                            ch_images.append((b64, mt))
+                        except FileNotFoundError:
+                            continue
+                    if not ch_images:
+                        ch_images = None
+
+                MAX_CHAPTER_IMAGES = 5
+                if ch_images and len(ch_images) > MAX_CHAPTER_IMAGES:
+                    ch_images = ch_images[:MAX_CHAPTER_IMAGES]
+
+                tasks.append(async_summarise_chapter(
+                    ch_id, ch_title, sec_data,
+                    llm_config=llm_config, images=ch_images,
+                    semaphore=sem,
+                ))
+
+            logger.info("  Summarising %d chapters (concurrency=%d)...", len(tasks), concurrency)
+            return list(await asyncio.gather(*tasks))
+
+        chapter_summaries = asyncio.run(_summarise_all())
 
         logger.info("  Summarised %d chapters", len(chapter_summaries))
+
+        # Save manifest early (with empty concept index) so stage 4 can be
+        # skipped on retry if stage 5 fails.
+        chapters_for_manifest: list[ChapterInfo] = []
+        for ch_sum in chapter_summaries:
+            sec_infos = [
+                SectionInfo(
+                    id=sec.section_id,
+                    title=sec.title,
+                    summary=sec.summary,
+                    chunk_ids=sec.chunk_ids,
+                )
+                for sec in ch_sum.sections
+            ]
+            chapters_for_manifest.append(ChapterInfo(
+                id=ch_sum.chapter_id,
+                title=ch_sum.title,
+                summary=ch_sum.summary,
+                key_concepts=ch_sum.key_concepts,
+                sections=sec_infos,
+            ))
+        partial_manifest = Manifest(
+            book_id=book_id,
+            chapters=chapters_for_manifest,
+            concept_index={},
+        )
+        write_manifest(partial_manifest)
+        logger.info("  Saved partial manifest (stages 1-4 recoverable)")
 
     # --- Stage 5: Index + Serialise ---
     logger.info("Stage 5/5: Building concept index and serialising...")
 
-    if existing_manifest and not force:
+    existing_in_catalog = bool(_lookup_catalog_summary(book_id))
+    if existing_manifest and existing_in_catalog and not force:
         concept_index_raw = existing_manifest.concept_index
         book_summary = _lookup_catalog_summary(book_id)
     else:
-        # Extract concepts (1 LLM call)
-        concept_mappings = extract_concepts(book_id, chapter_summaries, llm_config=llm_config)
+        # Extract concepts (batched LLM calls for large books)
+        max_retries = 3
+        concept_mappings: dict | None = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                concept_mappings = extract_concepts(book_id, chapter_summaries, llm_config=llm_config)
+                break
+            except (RuntimeError, TypeError, AttributeError, ValueError) as e:
+                if attempt < max_retries:
+                    logger.warning("Concept extraction failed (attempt %d/%d): %s", attempt, max_retries, e)
+                    logger.info("  Retrying in 30 seconds...")
+                    time.sleep(30)
+                else:
+                    logger.error("Concept extraction failed after %d attempts: %s", max_retries, e)
+                    logger.error("Stages 1-4 completed. Retry with the same command.")
+                    raise
+        if concept_mappings is None:  # pragma: no cover – loop always breaks or raises
+            raise RuntimeError("Concept extraction produced no result")
 
         # Post-process: fill in missing chunk_ids from section_chunks mapping
         # Pre-build chapter lookup for fallback

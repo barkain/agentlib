@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/hero.png" alt="AgentLib — Agentic Knowledge Navigation" width="100%">
+  <img src="assets/agentlib_hero.gif" alt="AgentLib Demo" width="800">
 </p>
 
 # AgentLib
@@ -22,51 +22,22 @@ No MCP server required. No tool calls. The agent reads preprocessed files direct
 
 ### How agents navigate the library
 
-```
-                     User question
-                          │
-                          ▼
-                ┌───────────────────┐
-                │ library-researcher│
-                │ (isolated context)│
-                └────────┬──────────┘
-                         │
-          ┌──────────────┼──────────────┐
-          │              │              │
-          ▼              ▼              ▼
-    ┌──────────┐  ┌─────────────┐  ┌──────────┐
-    │NAVIGATION│  │concepts.json│  │ catalog  │
-    │   .md    │  │  (Ls)       │  │  (L0)    │
-    │ ~50 tok  │  │ ~200 tok    │  │ ~50 tok  │
-    │ per book │  │             │  │ per book │
-    └──────────┘  └─────┬───────┘  └────┬─────┘
-          │             │               │
-          │      ┌──────┴──────┐        │
-          │      │ concept     │        │
-          │      │ name match? │        │
-          │      │ alias match?│        │
-          │      └──────┬──────┘        │
-          │          hit│   miss        │
-          │             │    │          │
-          │             │    ▼          │
-          │             │  ┌─────────┐  │
-          │             │  │manifest │  │
-          │             │  │  (L1)   │  │
-          │             │  │~500 tok │  │
-          │             │  └────┬────┘  │
-          │             │       │       │
-          │             ▼       ▼       │
-          │         ┌──────────────┐    │
-          │         │  chunks (L2) │    │
-          │         │ 300-500 tok  │    │
-          │         │   each       │    │ 
-          │         └──────┬───────┘    │
-          │                │            │
-          └────────────────┼────────────┘
-                           │
-                           ▼
-                   Synthesized answer
-                  (returned to user)
+```mermaid
+graph LR
+    Q["User question"] --> R["library-researcher<br/>(isolated context)"]
+    R --> NAV["NAVIGATION.md<br/>~50 tok per book"]
+    R --> CS["concepts.json (Ls)<br/>~200 tok"]
+    R --> CAT["catalog (L0)<br/>~50 tok per book"]
+
+    CS --> M{"concept/alias<br/>match?"}
+    M -- hit --> CH["chunks (L2)<br/>300-500 tok each"]
+    M -- miss --> MAN["manifest (L1)<br/>~500 tok"]
+    MAN --> CH
+
+    NAV --> CH
+    CAT --> MAN
+
+    CH --> A["Synthesized answer<br/>(returned to user)"]
 ```
 
 **Ls hit (fast path):** NAVIGATION → concepts.json → chunks — **2-3 reads, ~1k tokens**
@@ -82,6 +53,8 @@ L0  "What exists?"       →  catalog/NAVIGATION.md: ~50 tokens per book   (chea
 L1  "What's inside?"     →  manifest: structure, summaries, concepts      (moderate)
 L2  "Give me the content" →  small self-contained chunks, 300-500 tok     (expensive)
 ```
+
+Chunks are **content-aware**: tables and code fences are kept atomic (soft cap 500, hard cap 1 000 tokens). PDF tables are extracted via PyMuPDF and rendered as markdown pipe tables. Figures are extracted from PDFs with vision-based summarization, appearing as placeholders in chunks.
 
 Plus a **concept index** shortcut (Ls) that jumps directly to relevant chunks when the agent already knows what it's looking for. Each concept carries LLM-generated aliases so the agent can find it by abbreviation, acronym, or alternative phrasing.
 
@@ -195,6 +168,8 @@ claude --plugin-dir ./agentlib
 /agentlib:agentlib-ingest-book ~/books/owasp-guide.pdf
 ```
 
+Ingestion runs chapter summarization in parallel and batches concept extraction in groups of 50 for large books. If ingestion fails partway through, re-run the same command — completed stages are skipped automatically. Stage 5 (concept extraction) retries up to 3 times on API failures.
+
 ### Ingest a paper corpus
 ```bash
 /agentlib:agentlib-ingest-corpus ~/papers/my-research-papers/
@@ -232,7 +207,7 @@ AgentLib supports 5 LLM providers for ingestion and summarization (auto-detected
 | Google | Gemini 2.0 Flash | `GOOGLE_API_KEY` |
 | DeepSeek | DeepSeek Chat | `DEEPSEEK_API_KEY` |
 
-Set `AGENTLIB_PROVIDER` to override auto-detection.
+Set `AGENTLIB_PROVIDER` to override auto-detection. Set `AGENTLIB_CONCURRENCY` to control parallel ingestion workers (default 10).
 
 ## Examples
 

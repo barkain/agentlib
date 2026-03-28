@@ -124,6 +124,20 @@ def call_llm(
         raise
 
 
+async def async_call_llm(
+    config: LLMConfig,
+    prompt: str,
+    max_tokens: int = 1024,
+    images: list[tuple[str, str]] | None = None,
+) -> str:
+    """Async wrapper around call_llm, runs in a thread executor."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None, lambda: call_llm(config, prompt, max_tokens, images=images)
+    )
+
+
 def _call_anthropic(
     config: LLMConfig, prompt: str, max_tokens: int,
     *, images: list[tuple[str, str]] | None = None,
