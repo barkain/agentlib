@@ -38,6 +38,8 @@ class ConceptMapping:
     sec: str
     chunks: list[str] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
+    patterns: list[str] = field(default_factory=list)
+    related: list[str] = field(default_factory=list)
 
 
 def _get_config(llm_config: LLMConfig | None) -> LLMConfig:
@@ -232,6 +234,26 @@ Key concepts should be specific, searchable terms (3-5 per chapter). Section sum
         )
 
 
+# Seed vocabulary for pattern fingerprints — reused across books for consistency.
+_PATTERN_SEED_VOCAB = (
+    "credential-cycling, time-bounded-trust, revoke-reissue, "
+    "hierarchical-resolution, fan-out-aggregation, retry-with-backoff, "
+    "circuit-breaking, publish-subscribe, producer-consumer, map-reduce, "
+    "pipeline-stages, layered-abstraction, cache-invalidation, "
+    "optimistic-locking, pessimistic-locking, event-sourcing, "
+    "schema-evolution, capability-delegation, least-privilege, "
+    "defense-in-depth, fail-fast, graceful-degradation, "
+    "idempotent-operation, eventual-consistency, consensus-protocol, "
+    "rate-limiting, backpressure, bulkhead-isolation, "
+    "dependency-injection, inversion-of-control, observer-pattern, "
+    "state-machine, saga-orchestration, compensation-rollback, "
+    "content-negotiation, version-negotiation, feature-toggle, "
+    "blue-green-deployment, canary-release, immutable-infrastructure, "
+    "declarative-config, convention-over-config, zero-trust, "
+    "principle-of-least-astonishment, separation-of-concerns"
+)
+
+
 def _format_chapters_text(chapters: list[ChapterSummary]) -> str:
     """Format chapter summaries into text for the concept extraction prompt."""
     text = ""
@@ -251,9 +273,13 @@ def _parse_concept_response(data: dict) -> dict[str, list[ConceptMapping]]:
     for concept, value in data.items():
         if isinstance(value, dict) and "locations" in value:
             aliases = value.get("aliases", [])
+            patterns = value.get("patterns", [])
+            related = value.get("related", [])
             entries = value["locations"]
         elif isinstance(value, list):
             aliases = []
+            patterns = []
+            related = []
             entries = value
         else:
             continue
@@ -264,6 +290,8 @@ def _parse_concept_response(data: dict) -> dict[str, list[ConceptMapping]]:
                 sec=e.get("sec", ""),
                 chunks=e.get("chunks", []),
                 aliases=aliases,
+                patterns=patterns,
+                related=related,
             )
             for e in entries
         ]
@@ -319,18 +347,29 @@ Given these chapter summaries for book "{book_id}", create a unified concept ind
 {chapters_text}
 </book_content>
 
-Create a concept index that maps key concepts to their locations. Each concept should appear with all relevant chapters, sections, and chunks where it's discussed. For each concept, include 2-3 aliases: abbreviations, acronyms, or alternative phrasings someone might search for.
+Create a concept index that maps key concepts to their locations. Each concept should appear with all relevant chapters, sections, and chunks where it's discussed.
+
+For each concept, include:
+- **aliases** (2-3): abbreviations, acronyms, or alternative phrasings someone might search for.
+- **patterns** (2-3): abstract, domain-independent tags describing the concept's structural or functional nature. Use lowercase-hyphenated format. These enable cross-domain discovery — two concepts in different books that share a pattern are structurally analogous.
+  Reuse from this seed vocabulary when applicable: {_PATTERN_SEED_VOCAB}
+  Invent new patterns only when no seed pattern fits.
+- **related** (2-5): names of OTHER concepts in this same index that are closely related to this one.
 
 Respond with ONLY valid JSON in this exact format:
 {{
   "concept_name_1": {{
     "aliases": ["abbreviation", "synonym"],
+    "patterns": ["pattern-tag-1", "pattern-tag-2"],
+    "related": ["concept_name_2"],
     "locations": [
       {{"ch": "ch01", "sec": "ch01-s01", "chunks": ["ch01-s01-001", "ch01-s01-002"]}}
     ]
   }},
   "concept_name_2": {{
     "aliases": ["alt_name"],
+    "patterns": ["pattern-tag-3"],
+    "related": ["concept_name_1"],
     "locations": [
       {{"ch": "ch02", "sec": "ch02-s03", "chunks": ["ch02-s03-001"]}}
     ]
@@ -356,21 +395,29 @@ Include {concepts_target} concepts. Use specific, searchable terms. Merge simila
                 concept_key_map[key] = concept
                 all_concepts[concept] = list(mappings)
 
-    # Deduplicate locations and aliases per concept
+    # Deduplicate locations, aliases, patterns, and related per concept
     for concept in all_concepts:
         seen: set[tuple] = set()
         deduped: list[ConceptMapping] = []
         all_aliases: list[str] = []
+        all_patterns: list[str] = []
+        all_related: list[str] = []
         for m in all_concepts[concept]:
             loc_key = (m.ch, m.sec, tuple(sorted(m.chunks)))
             if loc_key not in seen:
                 seen.add(loc_key)
                 deduped.append(m)
             all_aliases.extend(m.aliases)
-        # Dedupe aliases preserving order
+            all_patterns.extend(m.patterns)
+            all_related.extend(m.related)
+        # Dedupe preserving order
         unique_aliases: list[str] = list(dict.fromkeys(all_aliases))
+        unique_patterns: list[str] = list(dict.fromkeys(all_patterns))
+        unique_related: list[str] = [r for r in dict.fromkeys(all_related) if r != concept]
         for m in deduped:
             m.aliases = unique_aliases
+            m.patterns = unique_patterns
+            m.related = unique_related
         all_concepts[concept] = deduped
 
     # Cap total concepts

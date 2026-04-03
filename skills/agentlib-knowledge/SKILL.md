@@ -23,55 +23,54 @@ If the Agent tool is unavailable, fall back to the manual steps below.
 
 ### Manual fallback (only if agent delegation fails)
 
-#### Step 1: Check what's available
+#### Step 1: Unified library search (fastest — 1 read covers ALL books + corpora)
 ```
-Read ~/.claude/plugins/agentlib/library/NAVIGATION.md
+Read ~/.claude/plugins/agentlib/library/library_index.json
 ```
-This lists ALL books AND paper corpora. Check BOTH sections — if a book OR corpus covers the topic, continue with the appropriate path below. Only proceed with other tools if nothing is relevant.
+This contains ALL concepts across ALL books and corpora with aliases, related concepts, pattern fingerprints, and source locations. If it doesn't exist, fall back to NAVIGATION.md.
 
----
-
-### Path A: Books
-
-**Find content (pick one):**
-
-**A1 — Search by concept (fastest, 2 reads):**
+#### Step 2: Preview chunks before reading
 ```
-Read ~/.claude/plugins/agentlib/library/books/{book-id}/concepts.json
+Read ~/.claude/plugins/agentlib/library/books/{book-id}/chunk_index.json
 ```
-Find your concept → get chunk IDs → go to Step 3.
+See what each chunk covers (section, concepts, token count, prev/next links) BEFORE reading it. Pick the most relevant 2-5 chunks.
 
-**A2 — Browse chapters (3 reads):**
+#### Step 2b: Cross-domain insight (optional)
+If the concept has pattern tags (e.g. "credential-cycling"), check:
 ```
-Read ~/.claude/plugins/agentlib/library/books/{book-id}/manifest.compact.json
+Read ~/.claude/plugins/agentlib/library/pattern_index.json
 ```
-Find relevant chapter/section → note chunk IDs → go to Step 3.
+Find structurally similar concepts in other books/domains for richer answers.
 
----
-
-### Path B: Corpora (scientific papers)
-
-**B1 — Search by concept across all papers (fastest, 1 read):**
-```
-Read ~/.claude/plugins/agentlib/library/corpus/{corpus-id}/concept_index.json
-```
-Find your concept → get paper IDs and chunk IDs → go to Step 3.
-
-**B2 — Browse by topic cluster (2-3 reads):**
-1. `corpus_catalog.json` — see topic clusters
-2. `clusters/{cluster-id}.json` — see papers with abstracts
-3. Pick papers → read `papers/{paper-id}/manifest.compact.json`
-
----
-
-### Step 3: Read the content
+#### Step 3: Read the content
 ```
 Read ~/.claude/plugins/agentlib/library/books/{book-id}/chunks/{chunk-id}.md
 Read ~/.claude/plugins/agentlib/library/corpus/{corpus-id}/papers/{paper-id}/chunks/{chunk-id}.md
 ```
-Each chunk is ~300-500 tokens. Read up to 5 chunks per question. Chunks have `prev`/`next` links for adjacent context.
+Each chunk is ~300-500 tokens. Read up to 5 chunks per question. Follow `prev`/`next` links from chunk_index for adjacent context.
+
+---
+
+### Older paths (still work, but unified search above is faster):
+
+**Per-book concept search:**
+```
+Read ~/.claude/plugins/agentlib/library/books/{book-id}/concepts.json
+```
+
+**Browse book chapters:**
+```
+Read ~/.claude/plugins/agentlib/library/books/{book-id}/manifest.compact.json
+```
+
+**Corpus concept search:**
+```
+Read ~/.claude/plugins/agentlib/library/corpus/{corpus-id}/concept_index.json
+```
 
 ### Rules
+- START with library_index.json — it's the fastest path (1 file, entire library)
+- Use chunk_index.json to preview before reading chunks
 - ALWAYS use `manifest.compact.json`, NEVER `manifest.json`
 - Max 4 navigation reads, then up to 5 content chunks
 - Cite the book/paper and chunk ID when answering

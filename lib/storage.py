@@ -8,11 +8,14 @@ from pathlib import Path
 from lib.models import (
     Catalog,
     CatalogEntry,
+    ChunkIndex,
     CorpusCatalog,
     CorpusConceptIndex,
+    LibraryIndex,
     Manifest,
     PaperManifest,
     PaperMetadata,
+    PatternIndex,
 )
 
 # Strict regex for path component validation: alphanumeric, hyphens, underscores, dots
@@ -220,6 +223,71 @@ def search_concepts(query: str, book_id: str | None = None) -> dict[str, list[di
 
 
 # ---------------------------------------------------------------------------
+# Chunk index (per-book preview metadata)
+# ---------------------------------------------------------------------------
+
+def write_chunk_index(book_id: str, chunk_index: ChunkIndex) -> Path:
+    """Write chunk_index.json for a book."""
+    import json
+    _validate_path_component(book_id, "book_id")
+    path = _safe_join(_books_root(), book_id, "chunk_index.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(chunk_index.to_dict(), indent=2), encoding="utf-8")
+    return path
+
+
+def read_chunk_index(book_id: str) -> ChunkIndex | None:
+    """Read chunk_index.json for a book. Returns None if not found."""
+    _validate_path_component(book_id, "book_id")
+    path = _safe_join(_books_root(), book_id, "chunk_index.json")
+    if not path.exists():
+        return None
+    return ChunkIndex.from_json(book_id, path.read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------------------
+# Library index (unified cross-book/corpus concept index)
+# ---------------------------------------------------------------------------
+
+def read_library_index() -> LibraryIndex:
+    """Read the unified library index. Returns empty index if not found."""
+    path = _data_root() / "library_index.json"
+    if not path.exists():
+        return LibraryIndex()
+    return LibraryIndex.from_json(path.read_text(encoding="utf-8"))
+
+
+def write_library_index(index: LibraryIndex) -> Path:
+    """Write the unified library index."""
+    import json
+    path = _data_root() / "library_index.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(index.to_dict(), indent=2), encoding="utf-8")
+    return path
+
+
+# ---------------------------------------------------------------------------
+# Pattern index (cross-domain associative recall)
+# ---------------------------------------------------------------------------
+
+def read_pattern_index() -> PatternIndex:
+    """Read the pattern index. Returns empty index if not found."""
+    path = _data_root() / "pattern_index.json"
+    if not path.exists():
+        return PatternIndex()
+    return PatternIndex.from_json(path.read_text(encoding="utf-8"))
+
+
+def write_pattern_index(index: PatternIndex) -> Path:
+    """Write the pattern index."""
+    import json
+    path = _data_root() / "pattern_index.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(index.to_dict(), indent=2), encoding="utf-8")
+    return path
+
+
+# ---------------------------------------------------------------------------
 # Zero-server mode: compact files for file-based navigation
 # ---------------------------------------------------------------------------
 
@@ -240,7 +308,7 @@ def write_compact_manifest(manifest: Manifest) -> Path:
             "summary": ch.summary[:100] + "..." if len(ch.summary) > 100 else ch.summary,
             "concepts": ch.key_concepts[:3],
             "sections": [
-                {"id": s.id, "title": s.title, "chunks": len(s.chunk_ids)}
+                {"id": s.id, "title": s.title, "chunk_ids": s.chunk_ids}
                 for s in ch.sections
             ],
         })
@@ -252,10 +320,9 @@ def write_compact_manifest(manifest: Manifest) -> Path:
 
 
 def write_concept_index(book_id: str, concept_index: dict) -> Path:
-    """Write a concept index file with aliases for file-based navigation.
+    """Write a concept index file with aliases, patterns, and related concepts.
 
-    Output format: {concept_name: {"chunks": [...], "aliases": [...]}}
-    Falls back to {concept_name: {"chunks": [...]}} when no aliases exist.
+    Output format: {concept_name: {"chunks": [...], "aliases": [...], "patterns": [...], "related": [...]}}
     """
     import json
 
@@ -264,25 +331,38 @@ def write_concept_index(book_id: str, concept_index: dict) -> Path:
     for concept, entries in concept_index.items():
         chunk_ids: list[str] = []
         aliases: list[str] = []
+        patterns: list[str] = []
+        related: list[str] = []
         for entry in entries:
             # Duck-type: callers pass ConceptEntry objects (with .chunks attr)
-            # or dicts (from deserialized JSON). Normalizing callers is out of
-            # scope for this PR.
+            # or dicts (from deserialized JSON).
             if hasattr(entry, "chunks"):
                 chunk_ids.extend(entry.chunks)
             elif isinstance(entry, dict):
                 chunk_ids.extend(entry.get("chunks", []))
-            # Collect aliases
             if hasattr(entry, "aliases"):
                 aliases.extend(entry.aliases)
             elif isinstance(entry, dict):
                 aliases.extend(entry.get("aliases", []))
+            if hasattr(entry, "patterns"):
+                patterns.extend(entry.patterns)
+            elif isinstance(entry, dict):
+                patterns.extend(entry.get("patterns", []))
+            if hasattr(entry, "related"):
+                related.extend(entry.related)
+            elif isinstance(entry, dict):
+                related.extend(entry.get("related", []))
         if chunk_ids:
             entry_data: dict[str, list[str]] = {"chunks": chunk_ids}
-            # Deduplicate aliases
             unique_aliases = list(dict.fromkeys(aliases))
             if unique_aliases:
                 entry_data["aliases"] = unique_aliases
+            unique_patterns = list(dict.fromkeys(patterns))
+            if unique_patterns:
+                entry_data["patterns"] = unique_patterns
+            unique_related = list(dict.fromkeys(r for r in related if r != concept))
+            if unique_related:
+                entry_data["related"] = unique_related
             flat[concept] = entry_data
 
     path = _safe_join(_books_root(), book_id, "concepts.json")
@@ -334,13 +414,24 @@ def write_navigation_md() -> Path:
         "\n"
         "## How to navigate\n"
         "\n"
-        "### Books -- Quick path (know what you need):\n"
-        "1. Read `books/{book-id}/concepts.json` -- find chunk IDs for your concept (check aliases too)\n"
-        "2. Read `books/{book-id}/chunks/{chunk-id}.md` -- get the content\n"
+        "### FASTEST: Unified library search (1 read, covers ALL books + corpora)\n"
+        "1. Read `library_index.json` -- find concepts across ALL sources with aliases, related concepts, and pattern tags\n"
+        "2. Read `books/{book-id}/chunk_index.json` -- preview chunks before reading (section, concepts, tokens, prev/next)\n"
+        "3. Read `books/{book-id}/chunks/{chunk-id}.md` -- get the content\n"
+        "\n"
+        "### Cross-domain insight: Pattern-based discovery\n"
+        "1. Find a concept's `patterns` in `library_index.json` (e.g. `credential-cycling`)\n"
+        "2. Read `pattern_index.json` -- find ALL concepts sharing that pattern across the library\n"
+        "3. Discover structurally similar concepts in different domains\n"
+        "\n"
+        "### Books -- Quick path:\n"
+        "1. Read `books/{book-id}/concepts.json` -- find chunk IDs for your concept (check aliases, patterns, related)\n"
+        "2. Read `books/{book-id}/chunk_index.json` -- preview chunks to pick the best ones\n"
+        "3. Read `books/{book-id}/chunks/{chunk-id}.md` -- get the content\n"
         "\n"
         "### Books -- Exploration path (browsing):\n"
         "1. Read `books/catalog.json` -- see all available books (~50 tokens/book)\n"
-        "2. Read `books/{book-id}/manifest.compact.json` -- see chapters, summaries, concepts (~500-2k tokens)\n"
+        "2. Read `books/{book-id}/manifest.compact.json` -- see chapters, sections with chunk IDs (~500-2k tokens)\n"
         "3. Read `books/{book-id}/chunks/{chunk-id}.md` -- get specific content (~300-500 tokens)\n"
         "\n"
         "### Corpora -- Paper collections:\n"
@@ -348,9 +439,12 @@ def write_navigation_md() -> Path:
         "2. Read `corpus/{corpus-id}/clusters/{cluster-id}.json` -- see papers with abstracts\n"
         "3. Read `corpus/{corpus-id}/papers/{paper-id}/manifest.compact.json` -- paper structure\n"
         "4. Read `corpus/{corpus-id}/papers/{paper-id}/chunks/{chunk-id}.md` -- paper content\n"
-        "5. Read `corpus/{corpus-id}/concept_index.json` -- cross-paper concept search\n"
+        "5. Read `corpus/{corpus-id}/concept_index.json` -- cross-paper concept search (with patterns)\n"
         "\n"
         "## Token budget\n"
+        "- library_index.json: ~500-1500 tokens (entire library)\n"
+        "- pattern_index.json: ~300-800 tokens\n"
+        "- chunk_index.json: ~200-600 tokens per book\n"
         "- catalog.json: ~50 tokens per book\n"
         "- manifest.compact.json: ~500-2000 tokens per book\n"
         "- Each chunk: ~300-500 tokens\n"
@@ -359,8 +453,12 @@ def write_navigation_md() -> Path:
         "- concept_index.json: ~500-1500 tokens\n"
         "\n"
         "## Rules\n"
+        "- START with `library_index.json` for cross-library search (fastest path)\n"
+        "- Use `chunk_index.json` to PREVIEW chunks before reading them\n"
+        "- Follow `prev`/`next` links in chunk_index for adjacent context\n"
+        "- Use `pattern_index.json` for cross-domain insights (\"this reminds me of...\")\n"
         "- NEVER read the full manifest.json -- use manifest.compact.json instead\n"
-        "- NEVER read all chunks -- use concepts.json or manifest to find the right ones\n"
+        "- NEVER read all chunks -- use concepts or chunk_index to find the right ones\n"
         "- Max 10 chunks per question -- if you need more, refine your search\n"
         "\n"
         "## Current library\n"

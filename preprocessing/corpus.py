@@ -51,24 +51,31 @@ from lib.models import (
     CorpusCatalog,
     CorpusConceptEntry,
     CorpusConceptIndex,
+    LibraryConceptEntry,
+    LibraryConceptSource,
     PaperEntry,
     PaperManifest,
     PaperMetadata,
     ParsedSection,
+    PatternEntry,
     SectionInfo,
 )
 from lib.parser import parse_pdf
 from lib.storage import (
     find_paper_by_filename,
     list_paper_chunks,
+    read_library_index,
     read_paper_manifest,
+    read_pattern_index,
     write_cluster_list,
     write_corpus_catalog,
     write_corpus_concept_index,
+    write_library_index,
     write_navigation_md,
     write_paper_chunk,
     write_paper_manifest,
     write_paper_metadata,
+    write_pattern_index,
 )
 from lib.summariser import (
     ChapterSummary,
@@ -246,12 +253,19 @@ def _build_corpus_concept_index(
 {papers_text}
 </papers>
 
-Create a concept index mapping key concepts to papers and sections. Include 15-40 concepts that appear across multiple papers. For each concept, include 2-3 aliases: abbreviations, acronyms, or alternative phrasings someone might search for.
+Create a concept index mapping key concepts to papers and sections. Include 15-40 concepts that appear across multiple papers.
+
+For each concept, include:
+- **aliases** (2-3): abbreviations, acronyms, or alternative phrasings.
+- **patterns** (2-3): abstract, domain-independent tags describing the concept's structural nature. Use lowercase-hyphenated format. These enable cross-domain discovery.
+  Reuse from this seed vocabulary when applicable: credential-cycling, time-bounded-trust, hierarchical-resolution, fan-out-aggregation, retry-with-backoff, circuit-breaking, publish-subscribe, producer-consumer, map-reduce, pipeline-stages, layered-abstraction, cache-invalidation, schema-evolution, capability-delegation, defense-in-depth, fail-fast, graceful-degradation, eventual-consistency, rate-limiting, state-machine, separation-of-concerns.
+  Invent new patterns only when no seed pattern fits.
 
 Respond with ONLY valid JSON:
 {{
   "concept_name": {{
     "aliases": ["abbreviation", "synonym"],
+    "patterns": ["pattern-tag-1", "pattern-tag-2"],
     "papers": ["paper-id-1", "paper-id-2"],
     "sections": {{"paper-id-1": "ch02", "paper-id-2": "ch03"}},
     "note": "brief context"
@@ -269,6 +283,7 @@ Respond with ONLY valid JSON:
                 sections=entry_data.get("sections", {}),
                 note=entry_data.get("note", ""),
                 aliases=entry_data.get("aliases", []),
+                patterns=entry_data.get("patterns", []),
             )
 
     return CorpusConceptIndex(corpus_id=corpus_id, concepts=concepts)
@@ -277,6 +292,87 @@ Respond with ONLY valid JSON:
 # ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
+
+def _update_library_indices_corpus(
+    corpus_id: str,
+    paper_summaries: dict[str, tuple[PaperMetadata, list]],
+) -> None:
+    """Update library_index.json and pattern_index.json with corpus concepts.
+
+    Reads the existing concept_index.json for this corpus (just written) and
+    merges it into the unified library indices.
+    """
+    from lib.storage import read_corpus_concept_index
+
+    concept_index = read_corpus_concept_index(corpus_id)
+    if not concept_index:
+        return
+
+    source_prefix = f"corpus:{corpus_id}"
+
+    # --- Library Index ---
+    lib_index = read_library_index()
+
+    # Remove stale entries for this corpus
+    for concept_name, entry in list(lib_index.concepts.items()):
+        entry.sources = [s for s in entry.sources if not s.source.startswith(source_prefix)]
+        if not entry.sources:
+            del lib_index.concepts[concept_name]
+
+    # Merge corpus concepts
+    for concept_name, ce in concept_index.concepts.items():
+        # Create one source entry per paper that covers this concept
+        new_sources = []
+        for paper_id in ce.papers:
+            new_sources.append(LibraryConceptSource(
+                source=f"{source_prefix}:{paper_id}",
+                chunks=[],  # corpus concept index doesn't track chunk IDs per paper
+            ))
+
+        if concept_name in lib_index.concepts:
+            existing = lib_index.concepts[concept_name]
+            existing.sources.extend(new_sources)
+            existing.aliases = list(dict.fromkeys(existing.aliases + ce.aliases))
+            existing.patterns = list(dict.fromkeys(existing.patterns + ce.patterns))
+        else:
+            lib_index.concepts[concept_name] = LibraryConceptEntry(
+                sources=new_sources,
+                aliases=list(dict.fromkeys(ce.aliases)),
+                related=[],
+                patterns=list(dict.fromkeys(ce.patterns)),
+            )
+
+    write_library_index(lib_index)
+
+    # --- Pattern Index ---
+    pat_index = read_pattern_index()
+    existing_pattern_names = set(pat_index.patterns.keys())
+
+    # Remove stale entries for this corpus
+    for pattern_name, entries in list(pat_index.patterns.items()):
+        pat_index.patterns[pattern_name] = [
+            e for e in entries if not e.source.startswith(source_prefix)
+        ]
+        if not pat_index.patterns[pattern_name]:
+            del pat_index.patterns[pattern_name]
+            existing_pattern_names.discard(pattern_name)
+
+    # Add pattern entries for corpus concepts
+    for concept_name, ce in concept_index.concepts.items():
+        for pat in ce.patterns:
+            # Simple exact match for corpus (no fuzzy needed since patterns come from same prompt)
+            if pat not in pat_index.patterns:
+                pat_index.patterns[pat] = []
+            for paper_id in ce.papers:
+                pat_index.patterns[pat].append(PatternEntry(
+                    concept=concept_name,
+                    source=f"{source_prefix}:{paper_id}",
+                    chunks=[],
+                ))
+            existing_pattern_names.add(pat)
+
+    write_pattern_index(pat_index)
+
 
 def ingest_corpus(
     folder_path: Path,
@@ -576,6 +672,10 @@ def ingest_corpus(
             logger.info("  No new papers to index, keeping existing concept_index.json")
     else:
         logger.warning("  No paper summaries available, skipping concept index")
+
+    # Update unified library_index.json and pattern_index.json
+    _update_library_indices_corpus(corpus_id, paper_summaries)
+    logger.info("  Updated library_index.json and pattern_index.json")
 
     # Update NAVIGATION.md
     write_navigation_md()

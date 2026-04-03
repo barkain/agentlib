@@ -75,6 +75,162 @@ class ConceptEntry:
     sec: str
     chunks: list[str] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
+    patterns: list[str] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Library-wide navigation structures
+# ---------------------------------------------------------------------------
+
+@dataclass
+class LibraryConceptSource:
+    """A concept's presence in a specific source (book or corpus paper)."""
+    source: str  # "book:<book_id>" or "corpus:<corpus_id>:<paper_id>"
+    chunks: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> LibraryConceptSource:
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
+@dataclass
+class LibraryConceptEntry:
+    """A concept in the unified library index with cross-source presence."""
+    sources: list[LibraryConceptSource] = field(default_factory=list)
+    aliases: list[str] = field(default_factory=list)
+    related: list[str] = field(default_factory=list)
+    patterns: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "sources": [s.to_dict() for s in self.sources],
+            "aliases": self.aliases,
+            "related": self.related,
+            "patterns": self.patterns,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> LibraryConceptEntry:
+        sources = [LibraryConceptSource.from_dict(s) for s in data.get("sources", [])]
+        return cls(
+            sources=sources,
+            aliases=data.get("aliases", []),
+            related=data.get("related", []),
+            patterns=data.get("patterns", []),
+        )
+
+
+@dataclass
+class LibraryIndex:
+    """Unified cross-book/corpus concept index for the entire library."""
+    concepts: dict[str, LibraryConceptEntry] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: v.to_dict() for k, v in self.concepts.items()}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> LibraryIndex:
+        concepts = {k: LibraryConceptEntry.from_dict(v) for k, v in data.items()}
+        return cls(concepts=concepts)
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2)
+
+    @classmethod
+    def from_json(cls, text: str) -> LibraryIndex:
+        return cls.from_dict(json.loads(text))
+
+
+@dataclass
+class PatternEntry:
+    """A concept linked to a pattern in the pattern index."""
+    concept: str
+    source: str  # "book:<book_id>" or "corpus:<corpus_id>:<paper_id>"
+    chunks: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PatternEntry:
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
+@dataclass
+class PatternIndex:
+    """Reverse index from abstract patterns to concepts across the library."""
+    patterns: dict[str, list[PatternEntry]] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: [e.to_dict() for e in v] for k, v in self.patterns.items()}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PatternIndex:
+        patterns = {
+            k: [PatternEntry.from_dict(e) for e in v]
+            for k, v in data.items()
+        }
+        return cls(patterns=patterns)
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2)
+
+    @classmethod
+    def from_json(cls, text: str) -> PatternIndex:
+        return cls.from_dict(json.loads(text))
+
+
+@dataclass
+class ChunkIndexEntry:
+    """Metadata about a single chunk for pre-read assessment."""
+    section: str
+    concepts: list[str] = field(default_factory=list)
+    tokens: int = 0
+    prev: str | None = None
+    next: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"section": self.section, "concepts": self.concepts, "tokens": self.tokens}
+        if self.prev:
+            d["prev"] = self.prev
+        if self.next:
+            d["next"] = self.next
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ChunkIndexEntry:
+        return cls(
+            section=data.get("section", ""),
+            concepts=data.get("concepts", []),
+            tokens=data.get("tokens", 0),
+            prev=data.get("prev"),
+            next=data.get("next"),
+        )
+
+
+@dataclass
+class ChunkIndex:
+    """Per-book index mapping chunk IDs to preview metadata."""
+    book_id: str
+    chunks: dict[str, ChunkIndexEntry] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: v.to_dict() for k, v in self.chunks.items()}
+
+    @classmethod
+    def from_dict(cls, book_id: str, data: dict[str, Any]) -> ChunkIndex:
+        chunks = {k: ChunkIndexEntry.from_dict(v) for k, v in data.items()}
+        return cls(book_id=book_id, chunks=chunks)
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2)
+
+    @classmethod
+    def from_json(cls, book_id: str, text: str) -> ChunkIndex:
+        return cls.from_dict(book_id, json.loads(text))
 
 
 @dataclass
@@ -307,6 +463,7 @@ class CorpusConceptEntry:
     sections: dict[str, str] = field(default_factory=dict)
     note: str = ""
     aliases: list[str] = field(default_factory=list)
+    patterns: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -318,6 +475,7 @@ class CorpusConceptEntry:
             sections=data.get("sections", {}),
             note=data.get("note", ""),
             aliases=data.get("aliases", []),
+            patterns=data.get("patterns", []),
         )
 
 
