@@ -4,5 +4,11 @@
   "description": "Agentic Knowledge Navigation — ingest books/papers/databases into chunked metadata layers, then navigate them via a universal skill. No MCP server required.",
   "author": {
     "name": "Nadav Barkai"
+  },
+  "mcpServers": {
+    "agentlib": {
+      "command": "uv",
+      "args": ["run", "python", "server.py"]
+    }
   }
 }
