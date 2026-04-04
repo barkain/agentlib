@@ -29,11 +29,11 @@ Read ~/.claude/plugins/agentlib/library/library_index.json
 ```
 This contains ALL concepts across ALL books and corpora with aliases, related concepts, pattern fingerprints, and source locations. Pattern discovery is also here (in the `patterns` section). If it doesn't exist, fall back to NAVIGATION.md.
 
-#### Step 2: Preview chunks before reading
+#### Step 2: Preview chunks — **MANDATORY**
 ```
 Read ~/.claude/plugins/agentlib/library/books/{book-id}/nav.json
 ```
-Per-book navigation combining structure, chunk preview (section, concepts, token count, prev/next links), and concept-to-chunk mapping. Pick the most relevant 2-5 chunks.
+**Never read chunks without previewing first.** Per-book navigation combining structure, chunk preview (section, concepts, token count, prev/next links), and concept-to-chunk mapping. Pick the most relevant 2-3 chunks.
 
 #### Step 3: Read the content
 ```
@@ -55,5 +55,5 @@ Read ~/.claude/plugins/agentlib/library/corpus/{corpus-id}/concept_index.json
 - START with library_index.json — it's the fastest path (1 file, entire library)
 - Use nav.json to preview before reading chunks
 - Use nav.json instead of manifest.json for navigation
-- Max 4 navigation reads, then up to 5 content chunks
+- Max 4 navigation reads, then up to 3 content chunks
 - Cite the book/paper and chunk ID when answering

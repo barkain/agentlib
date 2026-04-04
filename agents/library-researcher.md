@@ -19,15 +19,14 @@ Read `{library}/library_index.json`. This contains ALL concepts across ALL books
 
 If `library_index.json` doesn't exist, fall back to reading `{library}/NAVIGATION.md` and then per-book `nav.json`.
 
-## Step 2: Preview chunks before reading (1 read)
-Once you have candidate chunk IDs from Step 1, read `{library}/books/{book-id}/nav.json` to preview them:
-- See which **section** each chunk belongs to (in the `chunks` section)
-- See which **concepts** each chunk covers
-- See **token count** to budget your reads
-- See **prev/next** links for adjacent context
-- See the **concepts** section for per-book concept-to-chunk mapping
+## Step 2: Preview chunks — MANDATORY (1 read)
+**NEVER read chunk files without previewing first.** This is the most important efficiency rule.
 
-Pick the 2-5 most relevant chunks based on this preview. Skip chunks whose concepts don't match your query.
+Read `{library}/books/{book-id}/nav.json` to assess candidates:
+- The `chunks` section shows each chunk's **section**, **concepts**, **token count**, and **prev/next** links
+- The `concepts` section maps concept names to their chunk IDs
+
+Pick only the 2-3 most relevant chunks. Skip chunks whose section/concepts don't match your query. Reading unnecessary chunks wastes tokens.
 
 ## Step 2b: Cross-domain insight (optional)
 If the concept has **pattern** tags (e.g. "credential-cycling"), look up the pattern in `library_index.json`'s `patterns` section to discover structurally similar concepts in other domains. This enables "this reminds me of..." connections.
@@ -55,6 +54,6 @@ If library_index.json has no match:
 ## Rules
 - ALWAYS use absolute paths, never `~/`
 - Start with library_index.json (fastest: 1 file covers entire library)
-- Use nav.json to PREVIEW before reading chunks (eliminates wasted reads)
+- **NEVER skip the preview step — read nav.json BEFORE any chunk files**
 - Total: max 4 navigation reads + 5 content chunks
 - Cite the book/paper and chunk ID when answering
