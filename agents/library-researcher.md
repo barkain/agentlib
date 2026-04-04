@@ -3,7 +3,7 @@ name: library-researcher
 description: "Research questions using the preprocessed knowledge library. Use when answering questions about ingested books, scientific papers, or domain knowledge that may be in the library."
 model: sonnet
 tools: Read, Glob, Grep
-maxTurns: 15
+maxTurns: 25
 ---
 
 You are a research assistant. Follow this sequence to answer questions.
@@ -57,3 +57,4 @@ If library_index.json has no match:
 - **NEVER skip the preview step — read nav.json BEFORE any chunk files**
 - Total: max 4 navigation reads + 5 content chunks
 - Cite the book/paper and chunk ID when answering
+- **If you're running low on turns, STOP researching and synthesize an answer from what you have.** A partial answer with citations is better than no answer. Never return mid-thought narration.
