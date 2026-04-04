@@ -5,55 +5,20 @@ description: "Knowledge library navigation. Trigger on: research questions, book
 
 ## AgentLib — Knowledge Library
 
-**This skill activates automatically** for research/knowledge questions. Users can also invoke it explicitly with `/agentlib-knowledge <question>` to always consult the library.
+**ALWAYS check this library BEFORE web search or answering from training data** when the user asks about topics that could be covered by ingested books or paper corpora.
 
-You have a preprocessed knowledge library at `~/.claude/plugins/agentlib/library/`.
+Use the MCP tools provided by the agentlib plugin. Do NOT read library files directly.
 
-**IMPORTANT: ALWAYS check this library BEFORE web search or answering from training data when the user asks about topics that could be covered by ingested books or paper corpora.**
+### Workflow (3 calls max)
 
-**You MUST delegate this research to the `library-researcher` agent using the Agent tool.** Do NOT read library files directly — spawn the agent with the user's question and let it handle all navigation and reading. This keeps your main context clean.
+1. **`search_library(query)`** — searches concepts, aliases, related terms, and structural patterns across all books and corpora. Returns matching concepts with source locations and chunk IDs. If no results, try broader terms or synonyms.
 
-When spawning the agent, include the **absolute library path** in the prompt (expand `~` to the full home directory). Example:
-> Research the following question using the library at /Users/nadavbarkai/.claude/plugins/agentlib/library/
-> Question: {user's question}
+2. **`preview_chunks(book_id, chunk_ids)`** — preview chunk metadata (section title, concepts, token count, prev/next links) before committing to a full read. Pick the 2-3 most relevant chunks.
 
-The agent will return a synthesized answer with citations.
-
-If the Agent tool is unavailable, fall back to the manual steps below.
-
-### Manual fallback (only if agent delegation fails)
-
-#### Step 1: Unified library search (fastest — 1 read covers ALL books + corpora)
-```
-Read ~/.claude/plugins/agentlib/library/library_index.json
-```
-This contains ALL concepts across ALL books and corpora with aliases, related concepts, pattern fingerprints, and source locations. Pattern discovery is also here (in the `patterns` section). If it doesn't exist, fall back to NAVIGATION.md.
-
-#### Step 2: Preview chunks — **MANDATORY**
-```
-Read ~/.claude/plugins/agentlib/library/books/{book-id}/nav.json
-```
-**Never read chunks without previewing first.** Per-book navigation combining structure, chunk preview (section, concepts, token count, prev/next links), and concept-to-chunk mapping. Pick the most relevant 2-3 chunks.
-
-#### Step 3: Read the content
-```
-Read ~/.claude/plugins/agentlib/library/books/{book-id}/chunks/{chunk-id}.md
-Read ~/.claude/plugins/agentlib/library/corpus/{corpus-id}/papers/{paper-id}/chunks/{chunk-id}.md
-```
-Each chunk is ~300-500 tokens. Read up to 5 chunks per question. Follow `prev`/`next` links from nav.json for adjacent context.
-
----
-
-### Corpus-specific paths:
-
-**Corpus concept search:**
-```
-Read ~/.claude/plugins/agentlib/library/corpus/{corpus-id}/concept_index.json
-```
+3. **`read_chunks(book_id, chunk_ids)`** — read the full content of the selected chunks.
 
 ### Rules
-- START with library_index.json — it's the fastest path (1 file, entire library)
-- Use nav.json to preview before reading chunks
-- Use nav.json instead of manifest.json for navigation
-- Max 4 navigation reads, then up to 3 content chunks
-- Cite the book/paper and chunk ID when answering
+
+- Cite the book/paper title and chunk ID when answering
+- If `search_library` returns no results, try broader terms or check aliases before giving up
+- Max 2-3 content chunks per question — use preview to pick well
