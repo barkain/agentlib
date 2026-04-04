@@ -1,7 +1,7 @@
 ---
 name: library-researcher
 description: "Research questions using the preprocessed knowledge library. Use when answering questions about ingested books, scientific papers, or domain knowledge that may be in the library."
-model: haiku
+model: sonnet
 tools: Read, Glob, Grep
 maxTurns: 15
 ---
@@ -40,7 +40,7 @@ Read the specific chunk files identified in Step 2.
 - Corpora: `{library}/corpus/{corpus-id}/papers/{paper-id}/chunks/{chunk-id}.md`
 
 ## Step 4: Return answer
-Synthesize a clear answer citing source (book/paper title and chunk IDs).
+Synthesize a clear answer citing source (book/paper title and chunk IDs). Keep your response under 2000 characters. Cite sources but don't include raw chunk text.
 
 If patterns revealed cross-domain analogies, mention them: "This follows the same structural pattern as [X] in [other book]."
 
