@@ -6,23 +6,21 @@ import json
 from pathlib import Path
 
 from lib.models import (
+    BookNav,
     CatalogEntry,
-    ChunkIndex,
     ChunkIndexEntry,
     LibraryConceptEntry,
     LibraryConceptSource,
     LibraryIndex,
     Manifest,
     PatternEntry,
-    PatternIndex,
 )
 from lib.storage import (
     update_catalog_entry,
+    write_book_nav,
     write_chunk,
-    write_chunk_index,
     write_library_index,
     write_manifest,
-    write_pattern_index,
 )
 
 
@@ -128,40 +126,60 @@ class TestSearchLibrary:
 
     def test_search_empty_library(self, tmp_data_dir: Path) -> None:
         from server import search_library
-        result = json.loads(search_library("anything"))
-        assert result == {}
+        result = search_library("anything")
+        assert "No matches" in result
 
 
-class TestExplorePatterns:
-    def test_explore_pattern(self, tmp_data_dir: Path) -> None:
-        from server import explore_patterns
-        pat_index = PatternIndex(patterns={
-            "credential-cycling": [
-                PatternEntry(concept="OAuth tokens", source="book:api-sec", chunks=["ch03-001"]),
-                PatternEntry(concept="TLS certs", source="book:tls", chunks=["ch08-001"]),
-            ],
-        })
-        write_pattern_index(pat_index)
+class TestSearchLibraryPatterns:
+    """Tests for pattern search within search_library (migrated from TestExplorePatterns)."""
 
-        result = json.loads(explore_patterns("credential"))
-        assert "credential-cycling" in result
-        assert len(result["credential-cycling"]) == 2
+    def test_search_by_pattern(self, tmp_data_dir: Path) -> None:
+        from server import search_library
+        lib_index = LibraryIndex(
+            concepts={
+                "OAuth tokens": LibraryConceptEntry(
+                    sources=[LibraryConceptSource(source="book:api-sec", chunks=["ch03-001"])],
+                    aliases=[],
+                    related=[],
+                    patterns=["credential-cycling"],
+                ),
+                "TLS certs": LibraryConceptEntry(
+                    sources=[LibraryConceptSource(source="book:tls", chunks=["ch08-001"])],
+                    aliases=[],
+                    related=[],
+                    patterns=["credential-cycling"],
+                ),
+            },
+            patterns={
+                "credential-cycling": [
+                    PatternEntry(concept="OAuth tokens", source="book:api-sec", chunks=["ch03-001"]),
+                    PatternEntry(concept="TLS certs", source="book:tls", chunks=["ch08-001"]),
+                ],
+            },
+        )
+        write_library_index(lib_index)
 
-    def test_no_match_shows_available(self, tmp_data_dir: Path) -> None:
-        from server import explore_patterns
-        pat_index = PatternIndex(patterns={"retry-with-backoff": []})
-        write_pattern_index(pat_index)
+        result = json.loads(search_library("credential"))
+        assert "OAuth tokens" in result
+        assert "TLS certs" in result
 
-        result = json.loads(explore_patterns("nonexistent"))
-        assert result["no_match"] is True
-        assert "retry-with-backoff" in result["available_patterns"]
+    def test_no_match_shows_available_patterns(self, tmp_data_dir: Path) -> None:
+        from server import search_library
+        lib_index = LibraryIndex(
+            concepts={},
+            patterns={"retry-with-backoff": []},
+        )
+        write_library_index(lib_index)
+
+        result = search_library("nonexistent")
+        assert "retry-with-backoff" in result
+        assert "No matches" in result
 
 
 class TestPreviewChunks:
     def test_preview_existing(self, tmp_data_dir: Path) -> None:
         from server import preview_chunks
-        write_chunk("test-book", "ch01-001", "content")  # create book dir
-        chunk_index = ChunkIndex(
+        nav = BookNav(
             book_id="test-book",
             chunks={
                 "ch01-001": ChunkIndexEntry(
@@ -170,7 +188,7 @@ class TestPreviewChunks:
                 ),
             },
         )
-        write_chunk_index("test-book", chunk_index)
+        write_book_nav(nav)
 
         result = json.loads(preview_chunks("test-book", ["ch01-001", "ch01-999"]))
         assert result["ch01-001"]["section"] == "Intro"
@@ -180,5 +198,5 @@ class TestPreviewChunks:
 
     def test_preview_nonexistent_book(self, tmp_data_dir: Path) -> None:
         from server import preview_chunks
-        result = json.loads(preview_chunks("nonexistent", ["ch01-001"]))
-        assert "error" in result
+        result = preview_chunks("nonexistent", ["ch01-001"])
+        assert "No navigation data" in result

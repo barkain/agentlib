@@ -17,43 +17,44 @@ Read `{library}/library_index.json`. This contains ALL concepts across ALL books
 - **patterns**: abstract structural fingerprints (e.g. "credential-cycling", "retry-with-backoff")
 - **sources**: which books/papers contain this concept and their chunk IDs
 
-If `library_index.json` doesn't exist, fall back to reading `{library}/NAVIGATION.md` and then per-book `concepts.json`.
+If `library_index.json` doesn't exist, fall back to reading `{library}/NAVIGATION.md` and then per-book `nav.json`.
 
 ## Step 2: Preview chunks before reading (1 read)
-Once you have candidate chunk IDs from Step 1, read `{library}/books/{book-id}/chunk_index.json` to preview them:
-- See which **section** each chunk belongs to
+Once you have candidate chunk IDs from Step 1, read `{library}/books/{book-id}/nav.json` to preview them:
+- See which **section** each chunk belongs to (in the `chunks` section)
 - See which **concepts** each chunk covers
 - See **token count** to budget your reads
 - See **prev/next** links for adjacent context
+- See the **concepts** section for per-book concept-to-chunk mapping
 
 Pick the 2-5 most relevant chunks based on this preview. Skip chunks whose concepts don't match your query.
 
-## Step 2b: Cross-domain insight (optional, 1 read)
-If the concept has **pattern** tags (e.g. "credential-cycling"), read `{library}/pattern_index.json` to discover structurally similar concepts in other domains. This enables "this reminds me of..." connections.
+## Step 2b: Cross-domain insight (optional)
+If the concept has **pattern** tags (e.g. "credential-cycling"), look up the pattern in `library_index.json`'s `patterns` section to discover structurally similar concepts in other domains. This enables "this reminds me of..." connections.
 
 Only do this when the user's question could benefit from cross-domain analogies.
 
 ## Step 3: Read chunks (2-5 reads)
 Read the specific chunk files identified in Step 2.
-- If you need more context, follow **prev/next** links from chunk_index.json
+- If you need more context, follow **prev/next** links from nav.json
 - Books: `{library}/books/{book-id}/chunks/{chunk-id}.md`
 - Corpora: `{library}/corpus/{corpus-id}/papers/{paper-id}/chunks/{chunk-id}.md`
 
 ## Step 4: Return answer
 Synthesize a clear answer citing source (book/paper title and chunk IDs).
 
-If pattern_index revealed cross-domain analogies, mention them: "This follows the same structural pattern as [X] in [other book]."
+If patterns revealed cross-domain analogies, mention them: "This follows the same structural pattern as [X] in [other book]."
 
 ## Recovery: concept miss
 If library_index.json has no match:
 1. Check **related** concepts — your term may be a sub-concept of something indexed
-2. Check **pattern** tags — search by structural shape instead of name
-3. Fall back to `{library}/books/{book-id}/concepts.json` with alias matching
+2. Check **pattern** tags in library_index.json — search by structural shape instead of name
+3. Fall back to `{library}/books/{book-id}/nav.json` concepts section with alias matching
 4. Last resort: Grep on chunks directory
 
 ## Rules
 - ALWAYS use absolute paths, never `~/`
 - Start with library_index.json (fastest: 1 file covers entire library)
-- Use chunk_index.json to PREVIEW before reading chunks (eliminates wasted reads)
+- Use nav.json to PREVIEW before reading chunks (eliminates wasted reads)
 - Total: max 4 navigation reads + 5 content chunks
 - Cite the book/paper and chunk ID when answering

@@ -11,4 +11,4 @@ If a book ID is provided (`$ARGUMENTS`), show the detailed structure of that boo
 
 Read directly from the library:
 - No args: Read ~/.claude/plugins/agentlib/library/books/catalog.json and display as a formatted table
-- With book ID: Read ~/.claude/plugins/agentlib/library/books/{book-id}/manifest.compact.json and display the chapter structure
+- With book ID: Read ~/.claude/plugins/agentlib/library/books/{book-id}/nav.json and display the chapter structure

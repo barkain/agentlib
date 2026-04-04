@@ -16,6 +16,6 @@ This will:
 3. Summarise each paper's sections using the configured LLM provider
 4. Cluster papers by topic
 5. Build a cross-paper concept index with pattern fingerprints
-6. Update the unified library_index.json and pattern_index.json
+6. Update the unified library_index.json (concepts + patterns)
 
 After ingestion, use `/agentlib-knowledge` to query the corpus. The agent can discover connections between corpus papers and ingested books through shared pattern fingerprints.

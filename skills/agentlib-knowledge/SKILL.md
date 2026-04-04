@@ -27,41 +27,24 @@ If the Agent tool is unavailable, fall back to the manual steps below.
 ```
 Read ~/.claude/plugins/agentlib/library/library_index.json
 ```
-This contains ALL concepts across ALL books and corpora with aliases, related concepts, pattern fingerprints, and source locations. If it doesn't exist, fall back to NAVIGATION.md.
+This contains ALL concepts across ALL books and corpora with aliases, related concepts, pattern fingerprints, and source locations. Pattern discovery is also here (in the `patterns` section). If it doesn't exist, fall back to NAVIGATION.md.
 
 #### Step 2: Preview chunks before reading
 ```
-Read ~/.claude/plugins/agentlib/library/books/{book-id}/chunk_index.json
+Read ~/.claude/plugins/agentlib/library/books/{book-id}/nav.json
 ```
-See what each chunk covers (section, concepts, token count, prev/next links) BEFORE reading it. Pick the most relevant 2-5 chunks.
-
-#### Step 2b: Cross-domain insight (optional)
-If the concept has pattern tags (e.g. "credential-cycling"), check:
-```
-Read ~/.claude/plugins/agentlib/library/pattern_index.json
-```
-Find structurally similar concepts in other books/domains for richer answers.
+Per-book navigation combining structure, chunk preview (section, concepts, token count, prev/next links), and concept-to-chunk mapping. Pick the most relevant 2-5 chunks.
 
 #### Step 3: Read the content
 ```
 Read ~/.claude/plugins/agentlib/library/books/{book-id}/chunks/{chunk-id}.md
 Read ~/.claude/plugins/agentlib/library/corpus/{corpus-id}/papers/{paper-id}/chunks/{chunk-id}.md
 ```
-Each chunk is ~300-500 tokens. Read up to 5 chunks per question. Follow `prev`/`next` links from chunk_index for adjacent context.
+Each chunk is ~300-500 tokens. Read up to 5 chunks per question. Follow `prev`/`next` links from nav.json for adjacent context.
 
 ---
 
-### Older paths (still work, but unified search above is faster):
-
-**Per-book concept search:**
-```
-Read ~/.claude/plugins/agentlib/library/books/{book-id}/concepts.json
-```
-
-**Browse book chapters:**
-```
-Read ~/.claude/plugins/agentlib/library/books/{book-id}/manifest.compact.json
-```
+### Corpus-specific paths:
 
 **Corpus concept search:**
 ```
@@ -70,7 +53,7 @@ Read ~/.claude/plugins/agentlib/library/corpus/{corpus-id}/concept_index.json
 
 ### Rules
 - START with library_index.json — it's the fastest path (1 file, entire library)
-- Use chunk_index.json to preview before reading chunks
-- ALWAYS use `manifest.compact.json`, NEVER `manifest.json`
+- Use nav.json to preview before reading chunks
+- Use nav.json instead of manifest.json for navigation
 - Max 4 navigation reads, then up to 5 content chunks
 - Cite the book/paper and chunk ID when answering

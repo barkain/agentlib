@@ -234,25 +234,6 @@ Key concepts should be specific, searchable terms (3-5 per chapter). Section sum
         )
 
 
-# Seed vocabulary for pattern fingerprints — reused across books for consistency.
-_PATTERN_SEED_VOCAB = (
-    "credential-cycling, time-bounded-trust, revoke-reissue, "
-    "hierarchical-resolution, fan-out-aggregation, retry-with-backoff, "
-    "circuit-breaking, publish-subscribe, producer-consumer, map-reduce, "
-    "pipeline-stages, layered-abstraction, cache-invalidation, "
-    "optimistic-locking, pessimistic-locking, event-sourcing, "
-    "schema-evolution, capability-delegation, least-privilege, "
-    "defense-in-depth, fail-fast, graceful-degradation, "
-    "idempotent-operation, eventual-consistency, consensus-protocol, "
-    "rate-limiting, backpressure, bulkhead-isolation, "
-    "dependency-injection, inversion-of-control, observer-pattern, "
-    "state-machine, saga-orchestration, compensation-rollback, "
-    "content-negotiation, version-negotiation, feature-toggle, "
-    "blue-green-deployment, canary-release, immutable-infrastructure, "
-    "declarative-config, convention-over-config, zero-trust, "
-    "principle-of-least-astonishment, separation-of-concerns"
-)
-
 
 def _format_chapters_text(chapters: list[ChapterSummary]) -> str:
     """Format chapter summaries into text for the concept extraction prompt."""
@@ -351,9 +332,7 @@ Create a concept index that maps key concepts to their locations. Each concept s
 
 For each concept, include:
 - **aliases** (2-3): abbreviations, acronyms, or alternative phrasings someone might search for.
-- **patterns** (2-3): abstract, domain-independent tags describing the concept's structural or functional nature. Use lowercase-hyphenated format. These enable cross-domain discovery — two concepts in different books that share a pattern are structurally analogous.
-  Reuse from this seed vocabulary when applicable: {_PATTERN_SEED_VOCAB}
-  Invent new patterns only when no seed pattern fits.
+- **patterns** (1-3): structural or methodological patterns the concept exemplifies (e.g., 'layered-architecture', 'feedback-loop', 'defense-in-depth'). Use lowercase-hyphenated format. Use consistent naming across concepts — two concepts that share a pattern are structurally analogous.
 - **related** (2-5): names of OTHER concepts in this same index that are closely related to this one.
 
 Respond with ONLY valid JSON in this exact format:

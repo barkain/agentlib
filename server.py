@@ -159,76 +159,80 @@ def search_concepts(query: str, book_id: str | None = None) -> str:
 
 @mcp.tool()
 def search_library(query: str) -> str:
-    """Search the unified library index across ALL books and corpora. Returns matching concepts with their sources, aliases, related concepts, and pattern fingerprints."""
+    """Search the unified library index across ALL books and corpora.
+    Matches concept names, aliases, related concepts, and structural patterns."""
     lib_index = storage.read_library_index()
-    query_lower = query.lower()
+    query_lower = query.strip().lower()
+
     results: dict = {}
 
+    # 1. Search concepts (name, aliases, related)
     for concept, entry in lib_index.concepts.items():
-        match = query_lower in concept.lower()
-        if not match:
-            for alias in entry.aliases:
-                if query_lower in alias.lower():
-                    match = True
-                    break
-        if not match:
-            # Check related concepts for indirect match
-            for related in entry.related:
-                if query_lower in related.lower():
-                    match = True
-                    break
-        if match:
+        searchable = [concept.lower()]
+        searchable.extend(a.lower() for a in entry.aliases)
+        searchable.extend(r.lower() for r in entry.related)
+        if any(query_lower in s for s in searchable):
             results[concept] = {
-                "sources": {s.source: s.chunks for s in entry.sources},
+                "sources": [{"source": s.source, "chunks": s.chunks} for s in entry.sources],
                 "aliases": entry.aliases,
                 "related": entry.related,
                 "patterns": entry.patterns,
             }
-            if len(results) >= MAX_SEARCH_RESULTS:
-                break
 
-    return json.dumps(results)
-
-
-@mcp.tool()
-def explore_patterns(pattern: str) -> str:
-    """Look up a pattern tag to find structurally similar concepts across the library. Use after finding a concept's patterns via search_library to discover cross-domain analogies."""
-    pat_index = storage.read_pattern_index()
-    pattern_lower = pattern.lower()
-    results: dict = {}
-
-    for pat_name, entries in pat_index.patterns.items():
-        if pattern_lower in pat_name.lower():
-            results[pat_name] = [
-                {"concept": e.concept, "source": e.source, "chunks": e.chunks}
-                for e in entries
-            ]
+    # 2. Search patterns — find concepts that share a matching pattern
+    for pattern, entries in lib_index.patterns.items():
+        if query_lower in pattern.lower():
+            for pe in entries:
+                if pe.concept not in results:
+                    # Add this concept from the concepts dict if available
+                    concept_entry = lib_index.concepts.get(pe.concept)
+                    if concept_entry:
+                        results[pe.concept] = {
+                            "sources": [{"source": s.source, "chunks": s.chunks} for s in concept_entry.sources],
+                            "aliases": concept_entry.aliases,
+                            "related": concept_entry.related,
+                            "patterns": concept_entry.patterns,
+                            "matched_via_pattern": pattern,
+                        }
+                    else:
+                        results[pe.concept] = {
+                            "sources": [{"source": pe.source, "chunks": pe.chunks}],
+                            "matched_via_pattern": pattern,
+                        }
 
     if not results:
-        # List available patterns as hints
-        available = sorted(pat_index.patterns.keys())[:20]
-        return json.dumps({"no_match": True, "available_patterns": available})
+        # Helpful fallback: list available patterns
+        available_patterns = sorted(lib_index.patterns.keys())[:20]
+        if available_patterns:
+            return f"No matches for '{query}'. Available patterns: {', '.join(available_patterns)}"
+        return f"No matches for '{query}' in library index."
 
-    return json.dumps(results)
+    # Cap results
+    if len(results) > MAX_SEARCH_RESULTS:
+        results = dict(list(results.items())[:MAX_SEARCH_RESULTS])
+
+    return json.dumps(results, indent=2)
 
 
 @mcp.tool()
 def preview_chunks(book_id: str, chunk_ids: list[str]) -> str:
-    """Preview chunk metadata (section, concepts, token count, prev/next links) WITHOUT reading full content. Use this to decide which chunks are worth reading."""
-    if not storage.book_exists(book_id):
-        return json.dumps({"error": f"Book not found: {book_id}"})
-    chunk_index = storage.read_chunk_index(book_id)
-    if chunk_index is None:
-        return json.dumps({"error": "chunk_index.json not found — book may need re-ingestion"})
+    """Preview chunk metadata before reading full content. Shows section, concepts, token count, and prev/next navigation."""
+    nav = storage.read_book_nav(book_id)
+    if nav is None:
+        return f"No navigation data found for book '{book_id}'."
+
+    MAX_PREVIEW = 20
+    chunk_ids = chunk_ids[:MAX_PREVIEW]
 
     previews: dict = {}
-    for cid in chunk_ids[:20]:  # Cap at 20 previews
-        if cid in chunk_index.chunks:
-            previews[cid] = chunk_index.chunks[cid].to_dict()
+    for cid in chunk_ids:
+        entry = nav.chunks.get(cid)
+        if entry:
+            previews[cid] = entry.to_dict()
         else:
             previews[cid] = None
 
-    return json.dumps(previews)
+    return json.dumps(previews, indent=2)
 
 
 if __name__ == "__main__":

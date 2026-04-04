@@ -17,8 +17,8 @@ This will:
 2. Chunk the content into 300-500 token segments
 3. Summarise each chapter using the configured LLM provider
 4. Build a concept index with aliases, pattern fingerprints, and related concepts
-5. Generate chunk_index.json (preview metadata with prev/next chains)
-6. Update the unified library_index.json and pattern_index.json
+5. Generate nav.json (per-book navigation: structure, chunk preview, concepts)
+6. Update the unified library_index.json (concepts + patterns)
 7. Write manifest and update the library catalog
 
 After ingestion, the book is available in the library. The agent navigates it via the `/agentlib-knowledge` skill, starting with library_index.json for unified cross-library search.
