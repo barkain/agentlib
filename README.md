@@ -20,38 +20,30 @@ AgentLib changes this. Ingest the books, papers, and documents that matter for y
 AgentLib has three parts:
 
 1. **Ingestion pipelines** — preprocess books, scientific paper corpora, and databases into small, self-contained chunks with lightweight metadata at multiple layers.
-2. **Universal navigation skill** (`agentlib-knowledge`) — teaches the agent to read cheap metadata first, then drill into specific chunks.
-3. **Research agent** (`library-researcher`) — runs in an isolated context to keep the main conversation clean. All navigation and chunk reading happens in the agent's context; only a synthesized answer returns.
+2. **MCP tools** — the plugin registers an MCP server with 6 tools: `browse_library`, `open_book`, `search_library`, `search_concepts`, `preview_chunks`, `read_chunks`. The agent calls these directly — no sub-agent needed.
+3. **Universal navigation skill** (`agentlib-knowledge`) — teaches the agent to search cheap metadata first, then drill into specific chunks via `search_library` → `preview_chunks` → `read_chunks`.
 
-No MCP server required. No tool calls. The agent reads preprocessed files directly from `~/.claude/plugins/agentlib/library/`.
+The agent navigates via MCP tool calls against preprocessed files in `~/.claude/plugins/agentlib/library/`.
 
 ### How agents navigate the library
 
 ```mermaid
 graph LR
-    Q["User question"] --> R["library-researcher<br/>(isolated context)"]
-    R --> LI["library_index.json<br/>ALL concepts, ALL sources<br/>~500-1500 tok"]
-
-    LI --> M{"concept/alias/<br/>related match?"}
-    M -- hit --> CI["chunk_index.json<br/>preview chunks<br/>~200-600 tok"]
-    M -- miss via pattern --> PI["pattern_index.json<br/>cross-domain<br/>~300-800 tok"]
-    PI --> CI
-
-    CI --> CH["chunks (L2)<br/>300-500 tok each"]
-    CH --> A["Synthesized answer<br/>(returned to user)"]
-
-    LI -.->|"patterns"| PI
+    Q["User question"] --> SL["search_library<br/>concepts + patterns<br/>library_index.json"]
+    SL --> PC["preview_chunks<br/>chunk metadata<br/>nav.json"]
+    PC --> RC["read_chunks<br/>2-3 best chunks<br/>300-500 tok each"]
+    RC --> A["Answer with citations"]
 ```
 
-**Fast path (concept hit):** library_index → chunk_index (preview) → read 2-3 chunks — **3 reads, ~1.5k tokens**
+**Fast path (concept hit):** `search_library` → `preview_chunks` → `read_chunks` — **3 tool calls, ~1.5k tokens**
 
-**Pattern path (cross-domain):** library_index → pattern_index → chunk_index → chunks — **4 reads, ~2.5k tokens**
+**Pattern path (cross-domain):** `search_library` (pattern tags) → `preview_chunks` → `read_chunks` — **3 tool calls, ~2.5k tokens**
 
-**Recovery on miss:** related concepts → pattern traversal → per-book concepts.json → Grep fallback
+**Recovery on miss:** related concepts → pattern traversal → `search_concepts` per book → Grep fallback
 
 #### Unified library index
 
-`library_index.json` is the single entry point for the entire library. One file, one read, all books and corpora. Each concept carries:
+`library_index.json` is the single entry point for the entire library. One file, all books and corpora — queried via `search_library`. Each concept carries:
 
 - **aliases** — abbreviations, acronyms, synonyms (searching "CDX" matches "CycloneDX")
 - **related** — directly connected concepts in the same domain ("OAuth 2.0" → "JWT", "access tokens")
@@ -64,11 +56,11 @@ Every concept is tagged with 2-3 **pattern fingerprints**: abstract, domain-inde
 
 For example, "OAuth token rotation", "TLS certificate renewal", and "SSH key rotation" all share the pattern `credential-cycling`. An agent reading about token rotation can discover structurally analogous solutions in completely different books — without any keyword overlap.
 
-`pattern_index.json` is the reverse lookup: pattern → all concepts sharing that shape across the library. A seed vocabulary of ~40 common patterns ensures consistency across books; fuzzy matching merges near-duplicates.
+Pattern tags are integrated directly into `library_index.json` and searchable via `search_library`. A seed vocabulary of ~40 common patterns ensures consistency across books; fuzzy matching merges near-duplicates.
 
-#### Chunk preview index
+#### Chunk preview via nav.json
 
-`chunk_index.json` lets agents see what's inside each chunk *before* reading it: section title, concepts covered, token count, and prev/next chains. This eliminates blind reads — the agent picks the 2-3 best chunks from a set of candidates instead of reading 5 and hoping.
+Each book's `nav.json` lets agents see what's inside each chunk *before* reading it: section title, concepts covered, token count, and prev/next chains. Queried via `preview_chunks`, this eliminates blind reads — the agent picks the 2-3 best chunks from a set of candidates instead of reading 5 and hoping.
 
 <p align="center">
   <img src="assets/demo_proactive_query.png" alt="AgentLib proactive library query" width="800">
@@ -86,14 +78,13 @@ For example, "OAuth token rotation", "TLS certificate renewal", and "SSH key rot
 ### Metadata layers
 
 ```
-Lx  "What do I know?"    →  library_index.json: ALL concepts, ALL sources  (cheapest)
-Lp  "What's this like?"  →  pattern_index.json: cross-domain patterns      (cheap)
-Lc  "What's in a chunk?" →  chunk_index.json: preview before reading       (cheap)
-L0  "What exists?"       →  catalog/NAVIGATION.md: ~50 tokens per book     (cheap)
-Ls  "Jump to concept"    →  concepts.json: per-book concept→chunk map      (cheap)
-L1  "What's inside?"     →  manifest: structure, summaries, concepts        (moderate)
-L2  "Give me the content" →  small self-contained chunks, 300-500 tok      (expensive)
+Lx  "What do I know?"     →  library_index.json: concepts, patterns, sources  (search_library)
+Ln  "What's in a book?"   →  nav.json: structure + chunk metadata + concepts  (preview_chunks)
+L2  "Give me the content" →  chunks: 300-500 tok each                         (read_chunks)
+Lf  "Full rebuild"        →  manifest.json: complete archive per book         (offline)
 ```
+
+Three files instead of six — `library_index.json` (1 file, entire library), `nav.json` (per book), and `manifest.json` (per book, full archive for rebuild).
 
 Chunks are **content-aware**: tables and code fences are kept atomic (soft cap 500, hard cap 1 000 tokens). PDF tables are extracted via PyMuPDF and rendered as markdown pipe tables. Figures are extracted from PDFs with vision-based summarization, appearing as placeholders in chunks.
 
@@ -103,24 +94,22 @@ The concept index includes LLM-generated **aliases**, **related concepts**, and 
 
 ```
 library/
-├── NAVIGATION.md                          ← Human-readable index
-├── library_index.json                     ← Lx: unified concept index (ALL sources)
-├── pattern_index.json                     ← Lp: cross-domain pattern→concept map
+├── library_index.json                     ← Lx: unified concept + pattern discovery
 ├── books/
-│   ├── catalog.json                       ← L0
+│   ├── catalog.json
 │   └── {book-id}/
-│       ├── manifest.compact.json          ← L1 (sections with chunk IDs)
-│       ├── concepts.json                  ← Ls (with aliases, patterns, related)
-│       ├── chunk_index.json               ← Lc: chunk preview metadata
+│       ├── nav.json                       ← Ln: structure + chunk metadata + concepts
+│       ├── manifest.json                  ← Lf: full archive for rebuild
 │       └── chunks/
 │           └── {chunk-id}.md              ← L2
 └── corpus/
     └── {corpus-id}/
-        ├── corpus_catalog.json            ← L0 (topic clusters)
-        ├── concept_index.json             ← Ls (cross-paper, with patterns)
-        ├── clusters/{cluster-id}.json     ← L0b (papers per cluster)
+        ├── corpus_catalog.json
+        ├── concept_index.json
+        ├── clusters/{cluster-id}.json
         └── papers/{paper-id}/
-            ├── manifest.compact.json      ← L1
+            ├── nav.json                   ← Ln
+            ├── manifest.json              ← Lf
             └── chunks/{chunk-id}.md       ← L2
 ```
 
@@ -237,7 +226,7 @@ Ingestion runs chapter summarization in parallel and batches concept extraction 
 **Explicit invocation** — prefix with `/agentlib-knowledge` when you want the library's answer, not Claude's training data:
 > /agentlib-knowledge What defensive techniques protect against prompt injection?
 
-The skill delegates to the `library-researcher` agent, which navigates `library_index.json` → `chunk_index.json` → specific chunks in an isolated context. Only the synthesized answer with citations returns to your conversation. When relevant, the agent also checks `pattern_index.json` for cross-domain analogies.
+The skill uses MCP tools directly: `search_library` → `preview_chunks` → `read_chunks`. Only the synthesized answer with citations returns to your conversation. Pattern tags integrated into `search_library` enable cross-domain analogies automatically.
 
 ## LLM Providers
 
