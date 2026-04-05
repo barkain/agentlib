@@ -9,16 +9,17 @@ description: "Knowledge library navigation. Trigger on: research questions, book
 
 Use the MCP tools provided by the agentlib plugin. Do NOT read library files directly.
 
-### Workflow (3 calls max)
+### Workflow
 
-1. **`search_library(query)`** — searches concepts, aliases, related terms, and structural patterns across all books and corpora. Returns matching concepts with source locations and chunk IDs. If no results, try broader terms or synonyms.
+1. **`search_library(query)`** — Try ONCE with a broad 1-2 word query. Do NOT retry with rephrased queries. If no results, go to step 2.
 
-2. **`preview_chunks(book_id, chunk_ids)`** — preview chunk metadata (section title, concepts, token count, prev/next links) before committing to a full read. Pick the 2-3 most relevant chunks.
+2. **`browse_library`** to find the right book, then **`open_book(book_id)`** to browse its chapter structure. Identify the relevant chapter/section.
 
-3. **`read_chunks(book_id, chunk_ids)`** — read the full content of the selected chunks.
+3. **`preview_chunks(book_id, chunk_ids)`** — preview candidate chunks (section title, concepts, token count). Pick the 2-3 most relevant.
+
+4. **`read_chunks(book_id, chunk_ids)`** — read the full content of the selected chunks.
 
 ### Rules
 
 - Cite the book/paper title and chunk ID when answering
-- If `search_library` returns no results, try broader terms or check aliases before giving up
 - Max 2-3 content chunks per question — use preview to pick well
