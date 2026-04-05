@@ -1,4 +1,11 @@
-"""Filesystem I/O layer for AgentLib data storage."""
+"""Filesystem I/O layer for AgentLib data storage.
+
+Superseded functions (removed in v1.8.0):
+- write_chunk_index / read_chunk_index -> use nav.json via write_book_nav / read_book_nav
+- write_pattern_index / read_pattern_index -> patterns merged into library_index.json
+- write_compact_manifest -> use nav.json
+- write_concept_index -> concepts merged into nav.json
+"""
 from __future__ import annotations
 
 import os
@@ -6,10 +13,12 @@ import re
 from pathlib import Path
 
 from lib.models import (
+    BookNav,  # pyright: ignore[reportAttributeAccessIssue]
     Catalog,
     CatalogEntry,
     CorpusCatalog,
     CorpusConceptIndex,
+    LibraryIndex,  # pyright: ignore[reportAttributeAccessIssue]
     Manifest,
     PaperManifest,
     PaperMetadata,
@@ -220,74 +229,43 @@ def search_concepts(query: str, book_id: str | None = None) -> dict[str, list[di
 
 
 # ---------------------------------------------------------------------------
-# Zero-server mode: compact files for file-based navigation
+# Per-book navigation (nav.json — structure + chunks + concepts)
 # ---------------------------------------------------------------------------
 
-def write_compact_manifest(manifest: Manifest) -> Path:
-    """Write a compact manifest optimized for agent navigation (~500-2k tokens)."""
-    import json
-
-    _validate_path_component(manifest.book_id, "book_id")
-    compact: dict = {
-        "book_id": manifest.book_id,
-        "chapters": [],
-        "concepts": sorted(manifest.concept_index.keys()),
-    }
-    for ch in manifest.chapters:
-        compact["chapters"].append({
-            "id": ch.id,
-            "title": ch.title,
-            "summary": ch.summary[:100] + "..." if len(ch.summary) > 100 else ch.summary,
-            "concepts": ch.key_concepts[:3],
-            "sections": [
-                {"id": s.id, "title": s.title, "chunks": len(s.chunk_ids)}
-                for s in ch.sections
-            ],
-        })
-
-    path = _safe_join(_books_root(), manifest.book_id, "manifest.compact.json")
+def write_book_nav(nav: BookNav) -> None:
+    """Write per-book navigation file (structure + chunks + concepts)."""
+    path = _safe_join(_books_root(), nav.book_id, "nav.json")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(compact, indent=2), encoding="utf-8")
-    return path
+    path.write_text(nav.to_json())
 
 
-def write_concept_index(book_id: str, concept_index: dict) -> Path:
-    """Write a concept index file with aliases for file-based navigation.
+def read_book_nav(book_id: str) -> BookNav | None:
+    """Read per-book navigation file. Returns None if missing."""
+    _validate_path_component(book_id)
+    path = _safe_join(_books_root(), book_id, "nav.json")
+    if not path.exists():
+        return None
+    return BookNav.from_json(path.read_text())
 
-    Output format: {concept_name: {"chunks": [...], "aliases": [...]}}
-    Falls back to {concept_name: {"chunks": [...]}} when no aliases exist.
-    """
+
+# ---------------------------------------------------------------------------
+# Library index (unified cross-book/corpus concept index)
+# ---------------------------------------------------------------------------
+
+def read_library_index() -> LibraryIndex:
+    """Read the unified library index. Returns empty index if not found."""
+    path = _data_root() / "library_index.json"
+    if not path.exists():
+        return LibraryIndex()
+    return LibraryIndex.from_json(path.read_text(encoding="utf-8"))
+
+
+def write_library_index(index: LibraryIndex) -> Path:
+    """Write the unified library index."""
     import json
-
-    _validate_path_component(book_id, "book_id")
-    flat: dict[str, dict[str, list[str]]] = {}
-    for concept, entries in concept_index.items():
-        chunk_ids: list[str] = []
-        aliases: list[str] = []
-        for entry in entries:
-            # Duck-type: callers pass ConceptEntry objects (with .chunks attr)
-            # or dicts (from deserialized JSON). Normalizing callers is out of
-            # scope for this PR.
-            if hasattr(entry, "chunks"):
-                chunk_ids.extend(entry.chunks)
-            elif isinstance(entry, dict):
-                chunk_ids.extend(entry.get("chunks", []))
-            # Collect aliases
-            if hasattr(entry, "aliases"):
-                aliases.extend(entry.aliases)
-            elif isinstance(entry, dict):
-                aliases.extend(entry.get("aliases", []))
-        if chunk_ids:
-            entry_data: dict[str, list[str]] = {"chunks": chunk_ids}
-            # Deduplicate aliases
-            unique_aliases = list(dict.fromkeys(aliases))
-            if unique_aliases:
-                entry_data["aliases"] = unique_aliases
-            flat[concept] = entry_data
-
-    path = _safe_join(_books_root(), book_id, "concepts.json")
+    path = _data_root() / "library_index.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(flat, indent=2), encoding="utf-8")
+    path.write_text(json.dumps(index.to_dict(), indent=2), encoding="utf-8")
     return path
 
 
@@ -334,13 +312,23 @@ def write_navigation_md() -> Path:
         "\n"
         "## How to navigate\n"
         "\n"
-        "### Books -- Quick path (know what you need):\n"
-        "1. Read `books/{book-id}/concepts.json` -- find chunk IDs for your concept (check aliases too)\n"
+        "### FASTEST: Unified library search (1 read, covers ALL books + corpora)\n"
+        "1. Read `library_index.json` -- find concepts across ALL sources with aliases, related concepts, and pattern tags\n"
+        "2. Read `books/{book-id}/nav.json` -- per-book navigation: structure, chunk preview, and concepts\n"
+        "3. Read `books/{book-id}/chunks/{chunk-id}.md` -- get the content\n"
+        "\n"
+        "### Cross-domain insight: Pattern-based discovery\n"
+        "1. Find a concept's `patterns` in `library_index.json` (e.g. `credential-cycling`)\n"
+        "2. Look up the pattern in `library_index.json`'s `patterns` section to find ALL concepts sharing that pattern\n"
+        "3. Discover structurally similar concepts in different domains\n"
+        "\n"
+        "### Books -- Quick path:\n"
+        "1. Read `books/{book-id}/nav.json` -- find chunk IDs by concept (check aliases, patterns, related), preview chunks\n"
         "2. Read `books/{book-id}/chunks/{chunk-id}.md` -- get the content\n"
         "\n"
         "### Books -- Exploration path (browsing):\n"
         "1. Read `books/catalog.json` -- see all available books (~50 tokens/book)\n"
-        "2. Read `books/{book-id}/manifest.compact.json` -- see chapters, summaries, concepts (~500-2k tokens)\n"
+        "2. Read `books/{book-id}/nav.json` -- see chapters, sections, chunk preview, and concepts\n"
         "3. Read `books/{book-id}/chunks/{chunk-id}.md` -- get specific content (~300-500 tokens)\n"
         "\n"
         "### Corpora -- Paper collections:\n"
@@ -348,19 +336,24 @@ def write_navigation_md() -> Path:
         "2. Read `corpus/{corpus-id}/clusters/{cluster-id}.json` -- see papers with abstracts\n"
         "3. Read `corpus/{corpus-id}/papers/{paper-id}/manifest.compact.json` -- paper structure\n"
         "4. Read `corpus/{corpus-id}/papers/{paper-id}/chunks/{chunk-id}.md` -- paper content\n"
-        "5. Read `corpus/{corpus-id}/concept_index.json` -- cross-paper concept search\n"
+        "5. Read `corpus/{corpus-id}/concept_index.json` -- cross-paper concept search (with patterns)\n"
         "\n"
         "## Token budget\n"
+        "- library_index.json: ~500-1500 tokens (entire library)\n"
+        "- nav.json: ~500-2000 tokens per book (structure + chunks + concepts)\n"
         "- catalog.json: ~50 tokens per book\n"
-        "- manifest.compact.json: ~500-2000 tokens per book\n"
+        "- manifest.json: full archive (use nav.json instead for navigation)\n"
         "- Each chunk: ~300-500 tokens\n"
-        "- concepts.json: ~200-500 tokens\n"
         "- corpus_catalog.json: ~500-800 tokens\n"
         "- concept_index.json: ~500-1500 tokens\n"
         "\n"
         "## Rules\n"
-        "- NEVER read the full manifest.json -- use manifest.compact.json instead\n"
-        "- NEVER read all chunks -- use concepts.json or manifest to find the right ones\n"
+        "- START with `library_index.json` for cross-library search (fastest path)\n"
+        "- Use `nav.json` to PREVIEW chunks before reading them\n"
+        "- Follow `prev`/`next` links in nav.json chunks for adjacent context\n"
+        "- Pattern discovery is built into `library_index.json` (no separate file needed)\n"
+        "- For browsing, use `nav.json` instead of manifest.json\n"
+        "- NEVER read all chunks -- use concepts or nav.json to find the right ones\n"
         "- Max 10 chunks per question -- if you need more, refine your search\n"
         "\n"
         "## Current library\n"

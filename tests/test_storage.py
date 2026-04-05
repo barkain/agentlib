@@ -4,16 +4,26 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lib.models import Catalog, CatalogEntry, ConceptEntry, Manifest
-from lib.storage import (
+from lib.models import (  # pyright: ignore[reportAttributeAccessIssue]
+    Catalog,
+    CatalogEntry,
+    ConceptEntry,
+    LibraryConceptEntry,  # pyright: ignore[reportAttributeAccessIssue]
+    LibraryConceptSource,  # pyright: ignore[reportAttributeAccessIssue]
+    LibraryIndex,  # pyright: ignore[reportAttributeAccessIssue]
+    Manifest,
+)
+from lib.storage import (  # pyright: ignore[reportAttributeAccessIssue]
     read_catalog,
     read_chunk,
     read_chunks,
+    read_library_index,  # pyright: ignore[reportAttributeAccessIssue]
     read_manifest,
     search_concepts,
     update_catalog_entry,
     write_catalog,
     write_chunk,
+    write_library_index,  # pyright: ignore[reportAttributeAccessIssue]
     write_manifest,
     list_chunks,
     book_exists,
@@ -150,5 +160,33 @@ class TestSearchConcepts:
         loaded = read_manifest("old-book")
         assert loaded is not None
         assert loaded.concept_index["testing"][0].aliases == []
+        assert loaded.concept_index["testing"][0].patterns == []  # pyright: ignore[reportAttributeAccessIssue]
 
 
+class TestLibraryIndex:
+    def test_read_empty(self, tmp_data_dir: Path) -> None:
+        lib_index = read_library_index()
+        assert lib_index.concepts == {}
+
+    def test_write_and_read(self, tmp_data_dir: Path) -> None:
+        lib_index = LibraryIndex(concepts={
+            "OAuth 2.0": LibraryConceptEntry(
+                sources=[
+                    LibraryConceptSource(source="book:api-security", chunks=["ch03-s01-001"]),
+                    LibraryConceptSource(source="book:web-auth", chunks=["ch07-s02-004"]),
+                ],
+                aliases=["OAuth", "OAuth2"],
+                related=["JWT", "access tokens"],
+                patterns=["credential-cycling", "time-bounded-trust"],
+            ),
+        })
+        write_library_index(lib_index)
+
+        loaded = read_library_index()
+        assert "OAuth 2.0" in loaded.concepts
+        entry = loaded.concepts["OAuth 2.0"]
+        assert len(entry.sources) == 2
+        assert entry.sources[0].source == "book:api-security"
+        assert entry.aliases == ["OAuth", "OAuth2"]
+        assert entry.related == ["JWT", "access tokens"]
+        assert entry.patterns == ["credential-cycling", "time-bounded-trust"]

@@ -1,8 +1,15 @@
 {
   "name": "agentlib",
-  "version": "1.4.0",
-  "description": "Agentic Knowledge Navigation — ingest books/papers/databases into chunked metadata layers, then navigate them via a universal skill. No MCP server required.",
+  "version": "1.8.0",
+  "description": "Agentic Knowledge Navigation — ingest books and papers into a curated library, then navigate via MCP tools or file-based agent.",
   "author": {
     "name": "Nadav Barkai"
+  },
+  "mcpServers": {
+    "agentlib": {
+      "command": "/usr/bin/env",
+      "args": ["uv", "run", "--project", "${CLAUDE_PLUGIN_ROOT}", "python", "${CLAUDE_PLUGIN_ROOT}/server.py"],
+      "cwd": "${CLAUDE_PLUGIN_ROOT}"
+    }
   }
 }

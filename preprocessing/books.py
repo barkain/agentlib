@@ -46,22 +46,29 @@ from pathlib import Path
 
 from lib.chunker import chunk_sections, Chunk
 from lib.models import (
+    BookNav,
     CatalogEntry,
     ChapterInfo,
+    ChunkIndexEntry,
     ConceptEntry,
+    LibraryConceptEntry,
+    LibraryConceptSource,
     Manifest,
     ParsedSection,
+    PatternEntry,
     SectionInfo,
 )
 from lib.parser import parse_file
 from lib.storage import (
     list_chunks,
     read_catalog,
+    read_chunk,
+    read_library_index,
     read_manifest,
     update_catalog_entry,
+    write_book_nav,
     write_chunk,
-    write_compact_manifest,
-    write_concept_index,
+    write_library_index,
     write_manifest,
     write_navigation_md,
 )
@@ -121,6 +128,113 @@ def _group_chunks_by_section(
     for chunk in chunks:
         result[_section_id_from_chunk(chunk.chunk_id)].append(chunk.chunk_id)
     return dict(result)
+
+
+def _fuzzy_match_pattern(new_pattern: str, existing_patterns: set[str]) -> str:
+    """Match a new pattern to an existing one if similar enough, else return as-is.
+
+    Uses simple Jaccard similarity on character trigrams.
+    """
+    if new_pattern in existing_patterns:
+        return new_pattern
+
+    def _trigrams(s: str) -> set[str]:
+        return {s[i:i + 3] for i in range(max(0, len(s) - 2))}
+
+    new_tri = _trigrams(new_pattern)
+    if not new_tri:
+        return new_pattern
+
+    best_match = new_pattern
+    best_score = 0.0
+    for existing in existing_patterns:
+        existing_tri = _trigrams(existing)
+        if not existing_tri:
+            continue
+        intersection = len(new_tri & existing_tri)
+        union = len(new_tri | existing_tri)
+        score = intersection / union if union else 0.0
+        if score > best_score and score >= 0.7:
+            best_score = score
+            best_match = existing
+
+    return best_match
+
+
+def _update_library_indices(book_id: str, manifest: Manifest) -> None:
+    """Update library_index.json (concepts + patterns) with this book's concepts."""
+    source_prefix = f"book:{book_id}"
+
+    lib_index = read_library_index()
+
+    # Remove stale concept entries for this book
+    for concept_name, entry in list(lib_index.concepts.items()):
+        entry.sources = [s for s in entry.sources if s.source != source_prefix]
+        if not entry.sources:
+            del lib_index.concepts[concept_name]
+
+    # Remove stale pattern entries for this book
+    existing_pattern_names = set(lib_index.patterns.keys())
+    for pattern_name, entries in list(lib_index.patterns.items()):
+        lib_index.patterns[pattern_name] = [
+            e for e in entries if e.source != source_prefix
+        ]
+        if not lib_index.patterns[pattern_name]:
+            del lib_index.patterns[pattern_name]
+            existing_pattern_names.discard(pattern_name)
+
+    # Merge this book's concepts
+    for concept_name, concept_entries in manifest.concept_index.items():
+        all_chunks: list[str] = []
+        all_aliases: list[str] = []
+        all_patterns: list[str] = []
+        all_related: list[str] = []
+        for ce in concept_entries:
+            all_chunks.extend(ce.chunks)
+            all_aliases.extend(ce.aliases)
+            all_patterns.extend(getattr(ce, "patterns", []))
+            all_related.extend(getattr(ce, "related", []))
+
+        source = LibraryConceptSource(source=source_prefix, chunks=all_chunks)
+
+        if concept_name in lib_index.concepts:
+            existing = lib_index.concepts[concept_name]
+            existing.sources.append(source)
+            # Merge aliases/patterns/related with dedup
+            existing.aliases = list(dict.fromkeys(existing.aliases + all_aliases))
+            existing.patterns = list(dict.fromkeys(existing.patterns + all_patterns))
+            existing.related = list(dict.fromkeys(
+                r for r in existing.related + all_related if r != concept_name
+            ))
+        else:
+            lib_index.concepts[concept_name] = LibraryConceptEntry(
+                sources=[source],
+                aliases=list(dict.fromkeys(all_aliases)),
+                related=list(dict.fromkeys(r for r in all_related if r != concept_name)),
+                patterns=list(dict.fromkeys(all_patterns)),
+            )
+
+    # Merge pattern entries into lib_index.patterns with fuzzy merge
+    for concept_name, concept_entries in manifest.concept_index.items():
+        all_chunks: list[str] = []
+        raw_patterns: list[str] = []
+        for ce in concept_entries:
+            all_chunks.extend(ce.chunks)
+            raw_patterns.extend(getattr(ce, "patterns", []))
+
+        unique_patterns = list(dict.fromkeys(raw_patterns))
+        for raw_pat in unique_patterns:
+            canonical = _fuzzy_match_pattern(raw_pat, existing_pattern_names)
+            if canonical not in lib_index.patterns:
+                lib_index.patterns[canonical] = []
+            lib_index.patterns[canonical].append(PatternEntry(
+                concept=concept_name,
+                source=source_prefix,
+                chunks=all_chunks,
+            ))
+            existing_pattern_names.add(canonical)
+
+    write_library_index(lib_index)
 
 
 def ingest_book(
@@ -360,7 +474,7 @@ def ingest_book(
         concept_index_raw: dict[str, list[ConceptEntry]] = {}
         for concept, mappings in concept_mappings.items():
             concept_index_raw[concept] = [
-                ConceptEntry(ch=m.ch, sec=m.sec, chunks=m.chunks, aliases=m.aliases)
+                ConceptEntry(ch=m.ch, sec=m.sec, chunks=m.chunks, aliases=m.aliases, patterns=m.patterns, related=m.related)
                 for m in mappings
             ]
 
@@ -396,11 +510,113 @@ def ingest_book(
     write_manifest(manifest)
     logger.info("  Wrote manifest.json")
 
-    # Write zero-server navigation files
-    write_compact_manifest(manifest)
-    logger.info("  Wrote manifest.compact.json")
-    write_concept_index(book_id, manifest.concept_index)
-    logger.info("  Wrote concepts.json")
+    # Build chunk index entries for nav.json
+    chunk_idx_entries: dict[str, ChunkIndexEntry] = {}
+    # Build concept->chunk reverse map
+    chunk_concepts: dict[str, list[str]] = defaultdict(list)
+    for concept_name, entries in manifest.concept_index.items():
+        for entry in entries:
+            for cid in entry.chunks:
+                if concept_name not in chunk_concepts[cid]:
+                    chunk_concepts[cid].append(concept_name)
+
+    # Build section label map from manifest
+    section_labels: dict[str, str] = {}
+    for ch in manifest.chapters:
+        for sec in ch.sections:
+            for cid in sec.chunk_ids:
+                section_labels[cid] = f"{ch.title} > {sec.title}"
+
+    # Populate chunk index with prev/next from written chunks
+    all_chunk_ids = list_chunks(book_id)
+    for cid in all_chunk_ids:
+        chunk_idx_entries[cid] = ChunkIndexEntry(
+            section=section_labels.get(cid, ""),
+            concepts=chunk_concepts.get(cid, []),
+            tokens=0,  # filled below if available
+        )
+
+    # Set prev/next chains per section group and token counts
+    sec_groups: dict[str, list[str]] = defaultdict(list)
+    for cid in all_chunk_ids:
+        sec_id = _section_id_from_chunk(cid)
+        sec_groups[sec_id].append(cid)
+    for sec_id, cids in sec_groups.items():
+        for i, cid in enumerate(cids):
+            entry = chunk_idx_entries[cid]
+            if i > 0:
+                entry.prev = cids[i - 1]
+            if i < len(cids) - 1:
+                entry.next = cids[i + 1]
+
+    # Get token counts from the chunks we just created
+    if all_chunks:
+        for chunk in all_chunks:
+            if chunk.chunk_id in chunk_idx_entries:
+                chunk_idx_entries[chunk.chunk_id].tokens = chunk.meta.token_count
+    else:
+        # Fallback: read token counts from chunk file YAML frontmatter
+        for cid in all_chunk_ids:
+            content = read_chunk(book_id, cid)
+            if content and content.startswith("---"):
+                parts = content.split("---", 2)
+                if len(parts) >= 3:
+                    for line in parts[1].splitlines():
+                        if line.strip().startswith("token_count:"):
+                            try:
+                                token_val = int(line.strip().split(":", 1)[1].strip())
+                                if cid in chunk_idx_entries:
+                                    chunk_idx_entries[cid].tokens = token_val
+                            except (ValueError, IndexError):
+                                pass
+                            break
+
+    # Build nav chapters (compact structure)
+    nav_chapters = []
+    for ch in manifest.chapters:
+        nav_ch = {
+            "id": ch.id,
+            "title": ch.title,
+            "summary": ch.summary[:100],
+            "concepts": ch.key_concepts[:3],
+            "sections": [
+                {"id": s.id, "title": s.title, "chunks": len(s.chunk_ids)}
+                for s in ch.sections
+            ],
+        }
+        nav_chapters.append(nav_ch)
+
+    # Build nav concepts
+    nav_concepts: dict[str, dict] = {}
+    for concept, c_entries in manifest.concept_index.items():
+        c_all_chunks: list[str] = []
+        c_all_aliases: list[str] = []
+        c_all_patterns: list[str] = []
+        c_all_related: list[str] = []
+        for ce in c_entries:
+            c_all_chunks.extend(ce.chunks)
+            c_all_aliases.extend(ce.aliases)
+            c_all_patterns.extend(ce.patterns)
+            c_all_related.extend(ce.related)
+        nav_concepts[concept] = {
+            "chunks": list(dict.fromkeys(c_all_chunks)),
+            "aliases": list(dict.fromkeys(c_all_aliases)),
+            "patterns": list(dict.fromkeys(c_all_patterns)),
+            "related": list(dict.fromkeys(c_all_related)),
+        }
+
+    book_nav = BookNav(
+        book_id=book_id,
+        chapters=nav_chapters,
+        chunks=chunk_idx_entries,
+        concepts=nav_concepts,
+    )
+    write_book_nav(book_nav)
+    logger.info("  Wrote nav.json")
+
+    # Update unified library_index.json (concepts + patterns)
+    _update_library_indices(book_id, manifest)
+    logger.info("  Updated library_index.json")
 
     # Update catalog
     total_chunks = sum(

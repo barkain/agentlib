@@ -55,6 +55,8 @@ def _llm_response_for_batch(batch_chapters: list[ChapterSummary]) -> str:
         sec = ch.sections[0]
         concepts[concept_name] = {
             "aliases": [f"alias_{ch.chapter_id}"],
+            "patterns": [f"pattern_{ch.chapter_id}"],
+            "related": [],
             "locations": [
                 {"ch": ch.chapter_id, "sec": sec.section_id, "chunks": sec.chunk_ids}
             ],
@@ -100,6 +102,8 @@ class TestParseConceptResponse:
         data = {
             "Concept A": {
                 "aliases": ["alias1"],
+                "patterns": ["credential-cycling"],
+                "related": ["Concept B"],
                 "locations": [
                     {"ch": "ch01", "sec": "ch01-s01", "chunks": ["ch01-s01-001"]}
                 ],
@@ -117,6 +121,8 @@ class TestParseConceptResponse:
         assert m.sec == "ch01-s01"
         assert m.chunks == ["ch01-s01-001"]
         assert m.aliases == ["alias1"]
+        assert m.patterns == ["credential-cycling"]
+        assert m.related == ["Concept B"]
 
     def test_old_format_list(self):
         data = {
@@ -130,6 +136,8 @@ class TestParseConceptResponse:
         mappings = result["Concept B"]
         assert len(mappings) == 1
         assert mappings[0].aliases == []
+        assert mappings[0].patterns == []
+        assert mappings[0].related == []
         assert mappings[0].ch == "ch02"
 
     def test_multiple_locations(self):
@@ -215,6 +223,8 @@ class TestExtractConceptsBatching:
                 return json.dumps({
                     shared_concept: {
                         "aliases": ["shared"],
+                        "patterns": ["test-pattern"],
+                        "related": [],
                         "locations": [
                             {"ch": "ch01", "sec": "ch01-s01", "chunks": ["ch01-s01-001"]}
                         ],
@@ -226,6 +236,8 @@ class TestExtractConceptsBatching:
                 return json.dumps({
                     shared_concept: {
                         "aliases": ["shared"],
+                        "patterns": ["test-pattern"],
+                        "related": [],
                         "locations": [
                             {"ch": ch_id, "sec": f"{ch_id}-s01", "chunks": [f"{ch_id}-s01-001"]}
                         ],
@@ -258,6 +270,8 @@ class TestExtractConceptsBatching:
             return json.dumps({
                 shared_concept: {
                     "aliases": ["shared", "sc"],
+                    "patterns": ["test-pattern"],
+                    "related": [],
                     "locations": [
                         {"ch": "ch01", "sec": "ch01-s01", "chunks": ["ch01-s01-001"]},
                     ],
@@ -290,6 +304,8 @@ class TestExtractConceptsBatching:
             ]
             concepts[f"Concept {i:03d}"] = {
                 "aliases": [f"c{i}"],
+                "patterns": [f"pattern-{i}"],
+                "related": [],
                 "locations": locations,
             }
         mock_llm.return_value = json.dumps(concepts)

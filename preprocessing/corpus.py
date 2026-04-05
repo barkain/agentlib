@@ -51,20 +51,25 @@ from lib.models import (
     CorpusCatalog,
     CorpusConceptEntry,
     CorpusConceptIndex,
+    LibraryConceptEntry,
+    LibraryConceptSource,
     PaperEntry,
     PaperManifest,
     PaperMetadata,
     ParsedSection,
+    PatternEntry,
     SectionInfo,
 )
 from lib.parser import parse_pdf
 from lib.storage import (
     find_paper_by_filename,
     list_paper_chunks,
+    read_library_index,
     read_paper_manifest,
     write_cluster_list,
     write_corpus_catalog,
     write_corpus_concept_index,
+    write_library_index,
     write_navigation_md,
     write_paper_chunk,
     write_paper_manifest,
@@ -246,12 +251,19 @@ def _build_corpus_concept_index(
 {papers_text}
 </papers>
 
-Create a concept index mapping key concepts to papers and sections. Include 15-40 concepts that appear across multiple papers. For each concept, include 2-3 aliases: abbreviations, acronyms, or alternative phrasings someone might search for.
+Create a concept index mapping key concepts to papers and sections. Include 15-40 concepts that appear across multiple papers.
+
+For each concept, include:
+- **aliases** (2-3): abbreviations, acronyms, or alternative phrasings.
+- **patterns** (1-3): structural or methodological patterns the concept exemplifies (e.g., 'layered-architecture', 'feedback-loop', 'defense-in-depth'). Use lowercase-hyphenated format. Use consistent naming across concepts — two concepts that share a pattern are structurally analogous.
+- **related** (2-5): names of OTHER concepts in this same index that are closely related to this one.
 
 Respond with ONLY valid JSON:
 {{
   "concept_name": {{
     "aliases": ["abbreviation", "synonym"],
+    "patterns": ["pattern-tag-1", "pattern-tag-2"],
+    "related": ["other_concept_1", "other_concept_2"],
     "papers": ["paper-id-1", "paper-id-2"],
     "sections": {{"paper-id-1": "ch02", "paper-id-2": "ch03"}},
     "note": "brief context"
@@ -269,6 +281,8 @@ Respond with ONLY valid JSON:
                 sections=entry_data.get("sections", {}),
                 note=entry_data.get("note", ""),
                 aliases=entry_data.get("aliases", []),
+                patterns=entry_data.get("patterns", []),
+                related=entry_data.get("related", []),
             )
 
     return CorpusConceptIndex(corpus_id=corpus_id, concepts=concepts)
@@ -277,6 +291,79 @@ Respond with ONLY valid JSON:
 # ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
+
+def _update_library_indices_corpus(
+    corpus_id: str,
+    paper_summaries: dict[str, tuple[PaperMetadata, list]],
+) -> None:
+    """Update library_index.json (concepts + patterns) with corpus concepts.
+
+    Reads the existing concept_index.json for this corpus (just written) and
+    merges it into the unified library index.
+    """
+    from lib.storage import read_corpus_concept_index
+
+    concept_index = read_corpus_concept_index(corpus_id)
+    if not concept_index:
+        return
+
+    source_prefix = f"corpus:{corpus_id}"
+
+    lib_index = read_library_index()
+
+    # Remove stale concept entries for this corpus
+    for concept_name, entry in list(lib_index.concepts.items()):
+        entry.sources = [s for s in entry.sources if not s.source.startswith(source_prefix)]
+        if not entry.sources:
+            del lib_index.concepts[concept_name]
+
+    # Remove stale pattern entries for this corpus
+    for pattern_name, entries in list(lib_index.patterns.items()):
+        lib_index.patterns[pattern_name] = [
+            e for e in entries if not e.source.startswith(source_prefix)
+        ]
+        if not lib_index.patterns[pattern_name]:
+            del lib_index.patterns[pattern_name]
+
+    # Merge corpus concepts
+    for concept_name, ce in concept_index.concepts.items():
+        # Create one source entry per paper that covers this concept
+        new_sources = []
+        for paper_id in ce.papers:
+            new_sources.append(LibraryConceptSource(
+                source=f"{source_prefix}:{paper_id}",
+                chunks=[],  # corpus concept index doesn't track chunk IDs per paper
+            ))
+
+        if concept_name in lib_index.concepts:
+            existing = lib_index.concepts[concept_name]
+            existing.sources.extend(new_sources)
+            existing.aliases = list(dict.fromkeys(existing.aliases + ce.aliases))
+            existing.patterns = list(dict.fromkeys(existing.patterns + ce.patterns))
+            existing.related = list(dict.fromkeys(existing.related + ce.related))
+        else:
+            lib_index.concepts[concept_name] = LibraryConceptEntry(
+                sources=new_sources,
+                aliases=list(dict.fromkeys(ce.aliases)),
+                related=list(dict.fromkeys(ce.related)),
+                patterns=list(dict.fromkeys(ce.patterns)),
+            )
+
+    # Merge pattern entries into lib_index.patterns
+    for concept_name, ce in concept_index.concepts.items():
+        for pat in ce.patterns:
+            # Simple exact match for corpus (no fuzzy needed since patterns come from same prompt)
+            if pat not in lib_index.patterns:
+                lib_index.patterns[pat] = []
+            for paper_id in ce.papers:
+                lib_index.patterns[pat].append(PatternEntry(
+                    concept=concept_name,
+                    source=f"{source_prefix}:{paper_id}",
+                    chunks=[],
+                ))
+
+    write_library_index(lib_index)
+
 
 def ingest_corpus(
     folder_path: Path,
@@ -576,6 +663,10 @@ def ingest_corpus(
             logger.info("  No new papers to index, keeping existing concept_index.json")
     else:
         logger.warning("  No paper summaries available, skipping concept index")
+
+    # Update unified library_index.json (concepts + patterns)
+    _update_library_indices_corpus(corpus_id, paper_summaries)
+    logger.info("  Updated library_index.json")
 
     # Update NAVIGATION.md
     write_navigation_md()

@@ -16,7 +16,9 @@ This will:
 1. Parse the PDF/EPUB to extract chapter/section structure
 2. Chunk the content into 300-500 token segments
 3. Summarise each chapter using the configured LLM provider
-4. Build a concept index for fast search
-5. Write manifest and update the library catalog
+4. Build a concept index with aliases, pattern fingerprints, and related concepts
+5. Generate nav.json (per-book navigation: structure, chunk preview, concepts)
+6. Update the unified library_index.json (concepts + patterns)
+7. Write manifest and update the library catalog
 
-After ingestion, the book is available in the library. The agent navigates it via the `/agentlib-knowledge` skill by reading catalog.json, manifest.compact.json, concepts.json, and chunks/*.md
+After ingestion, the book is available in the library. The agent navigates it via the `/agentlib-knowledge` skill, starting with library_index.json for unified cross-library search.

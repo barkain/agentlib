@@ -93,8 +93,10 @@ def open_book(book_id: str) -> str:
             "title": ch.title,
             "summary": _truncate(ch.summary, MAX_CHAPTER_SUMMARY_CHARS),
             "concepts": ch.key_concepts[:MAX_CONCEPTS_PER_CHAPTER],
-            "sections": len(ch.sections),
-            "chunks": sum(len(s.chunk_ids) for s in ch.sections),
+            "sections": [
+                {"id": s.id, "title": s.title, "chunk_ids": s.chunk_ids}
+                for s in ch.sections
+            ],
         })
 
     compact: dict = {"book_id": manifest.book_id}
@@ -155,6 +157,84 @@ def search_concepts(query: str, book_id: str | None = None) -> str:
         compact["truncated"] = True  # type: ignore[assignment]
 
     return json.dumps(compact)
+
+
+@mcp.tool()
+def search_library(query: str) -> str:
+    """Search the unified library index across ALL books and corpora.
+    Matches concept names, aliases, related concepts, and structural patterns."""
+    lib_index = storage.read_library_index()
+    query_lower = query.strip().lower()
+
+    results: dict = {}
+
+    # 1. Search concepts (name, aliases, related)
+    for concept, entry in lib_index.concepts.items():
+        searchable = [concept.lower()]
+        searchable.extend(a.lower() for a in entry.aliases)
+        searchable.extend(r.lower() for r in entry.related)
+        if any(query_lower in s for s in searchable):
+            results[concept] = {
+                "sources": [{"source": s.source, "chunks": s.chunks} for s in entry.sources],
+                "aliases": entry.aliases,
+                "related": entry.related,
+                "patterns": entry.patterns,
+            }
+
+    # 2. Search patterns — find concepts that share a matching pattern
+    for pattern, entries in lib_index.patterns.items():
+        if query_lower in pattern.lower():
+            for pe in entries:
+                if pe.concept not in results:
+                    # Add this concept from the concepts dict if available
+                    concept_entry = lib_index.concepts.get(pe.concept)
+                    if concept_entry:
+                        results[pe.concept] = {
+                            "sources": [{"source": s.source, "chunks": s.chunks} for s in concept_entry.sources],
+                            "aliases": concept_entry.aliases,
+                            "related": concept_entry.related,
+                            "patterns": concept_entry.patterns,
+                            "matched_via_pattern": pattern,
+                        }
+                    else:
+                        results[pe.concept] = {
+                            "sources": [{"source": pe.source, "chunks": pe.chunks}],
+                            "matched_via_pattern": pattern,
+                        }
+
+    if not results:
+        # Helpful fallback: list available patterns
+        available_patterns = sorted(lib_index.patterns.keys())[:20]
+        if available_patterns:
+            return f"No matches for '{query}'. Available patterns: {', '.join(available_patterns)}"
+        return f"No matches for '{query}' in library index."
+
+    # Cap results
+    if len(results) > MAX_SEARCH_RESULTS:
+        results = dict(list(results.items())[:MAX_SEARCH_RESULTS])
+
+    return json.dumps(results, indent=2)
+
+
+@mcp.tool()
+def preview_chunks(book_id: str, chunk_ids: list[str]) -> str:
+    """Preview chunk metadata before reading full content. Shows section, concepts, token count, and prev/next navigation."""
+    nav = storage.read_book_nav(book_id)
+    if nav is None:
+        return f"No navigation data found for book '{book_id}'."
+
+    MAX_PREVIEW = 20
+    chunk_ids = chunk_ids[:MAX_PREVIEW]
+
+    previews: dict = {}
+    for cid in chunk_ids:
+        entry = nav.chunks.get(cid)
+        if entry:
+            previews[cid] = entry.to_dict()
+        else:
+            previews[cid] = None
+
+    return json.dumps(previews, indent=2)
 
 
 if __name__ == "__main__":
