@@ -93,8 +93,10 @@ def open_book(book_id: str) -> str:
             "title": ch.title,
             "summary": _truncate(ch.summary, MAX_CHAPTER_SUMMARY_CHARS),
             "concepts": ch.key_concepts[:MAX_CONCEPTS_PER_CHAPTER],
-            "sections": len(ch.sections),
-            "chunks": sum(len(s.chunk_ids) for s in ch.sections),
+            "sections": [
+                {"id": s.id, "title": s.title, "chunk_ids": s.chunk_ids}
+                for s in ch.sections
+            ],
         })
 
     compact: dict = {"book_id": manifest.book_id}
